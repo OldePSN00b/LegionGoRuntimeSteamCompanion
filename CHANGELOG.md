@@ -2,6 +2,35 @@
 
 All notable changes to Legion Go Runtime Steam Companion are documented here.
 
+## 1.2.3
+
+- Fixed a StrictMode `.Count` error when viewing a saved game profile with no process override or a single process override.
+- Normalized the process override value to an array before checking its count.
+
+## 1.2.2
+
+- Added a Settings option to view all saved per-game profiles.
+- Added thermal profile and Lossless Scaling status to every game-picker entry.
+- Added an explicit resolved-profile summary before the selected game launches.
+- Profile displays identify whether each effective value comes from a saved game profile or global defaults.
+
+## 1.2.1
+
+- Filtered Steamworks Common Redistributables (Steam App ID 228980) from installed-game discovery.
+- The shared redistributable component no longer appears in the game picker, search results, or profile-management menus.
+
+## 1.2.0
+
+- Added global thermal-profile settings with Balanced as the default baseline.
+- Added per-game Quiet, Balanced, and Performance profiles.
+- Added `Get-SteamGameProfile`, `Set-SteamGameProfile`, and `Remove-SteamGameProfile`.
+- Added `-ThermalProfile` and the `-TDProfile` alias to `Start-SteamGameSession`.
+- Added per-game Lossless Scaling preferences.
+- Added interactive profile configuration and removal.
+- Balanced sessions now skip thermal elevation and post-session restoration.
+- Quiet and Performance sessions restore Balanced after the game exits.
+- Updated documentation, help, examples, and manifest metadata.
+
 ## 1.1.1
 
 - Added a first-time setup section.

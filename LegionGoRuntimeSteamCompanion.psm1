@@ -30,6 +30,7 @@ function Get-DefaultGameLauncherSetting {
     param()
 
     [pscustomobject]@{
+        DefaultThermalProfile        = 'Balanced'
         UseLosslessScaling            = $true
         CloseLosslessScalingAfterGame = $true
         LosslessScalingPathOverride   = ''
@@ -125,6 +126,9 @@ function Set-GameLauncherSetting {
         Updates only the settings explicitly supplied, preserves all other values,
         saves the result to Settings.json, and returns the updated settings object.
 
+    .PARAMETER DefaultThermalProfile
+        Default thermal profile used when a game has no saved profile and no CLI override.
+
     .PARAMETER UseLosslessScaling
         Enables or disables Lossless Scaling by default.
 
@@ -150,6 +154,8 @@ function Set-GameLauncherSetting {
     #>
     [CmdletBinding()]
     param(
+        [ValidateSet('Quiet', 'Balanced', 'Performance')]
+        [string]$DefaultThermalProfile,
         [bool]$UseLosslessScaling,
         [bool]$CloseLosslessScalingAfterGame,
         [string]$LosslessScalingPathOverride,
@@ -162,6 +168,7 @@ function Set-GameLauncherSetting {
     $setting = Get-GameLauncherSetting
 
     foreach ($name in @(
+        'DefaultThermalProfile',
         'UseLosslessScaling',
         'CloseLosslessScalingAfterGame',
         'LosslessScalingPathOverride',
@@ -291,6 +298,13 @@ function Get-SteamInstalledGame {
             $installDir = if ($content -match '"installdir"\s+"(?<Value>.*?)"') { $Matches.Value } else { $null }
             if (-not $manifestAppId -or -not $gameName -or -not $installDir) { continue }
 
+            # Steamworks Common Redistributables is a shared Steam component rather
+            # than a user-launchable game. Exclude it at discovery time so it does
+            # not appear in game searches, the picker, or profile-management menus.
+            if ($manifestAppId -eq '228980' -or $gameName -eq 'Steamworks Common Redistributables') {
+                continue
+            }
+
             [pscustomobject]@{
                 Name        = $gameName
                 AppId       = $manifestAppId
@@ -378,7 +392,7 @@ function Set-ElevatedLegionThermalMode {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('Balanced', 'Performance')]
+        [ValidateSet('Quiet', 'Balanced', 'Performance')]
         [string]$Mode
     )
 
@@ -451,53 +465,222 @@ function Get-GameProcess {
     }
 }
 
+
+function Get-ResolvedSteamGameProfile {
+    <#
+    .SYNOPSIS
+        Resolves the effective profile for one installed Steam game.
+
+    .DESCRIPTION
+        Combines the saved per-game profile with the global defaults so the caller can
+        see exactly which thermal profile and Lossless Scaling preference will be used.
+        This function is private to the module.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][psobject]$Game,
+        [Parameter(Mandatory)][psobject]$Setting
+    )
+
+    $override = Get-GameOverride -Setting $Setting -AppId $Game.AppId
+    $hasSavedProfile = [bool]$override
+
+    $thermalProfile = if ($override -and $override.PSObject.Properties['ThermalProfile'] -and $override.ThermalProfile) {
+        [string]$override.ThermalProfile
+    }
+    else {
+        [string]$Setting.DefaultThermalProfile
+    }
+
+    $useLosslessScaling = if ($override -and $override.PSObject.Properties['UseLosslessScaling']) {
+        [bool]$override.UseLosslessScaling
+    }
+    else {
+        [bool]$Setting.UseLosslessScaling
+    }
+
+    [pscustomobject]@{
+        AppId                    = [string]$Game.AppId
+        Name                     = [string]$Game.Name
+        ThermalProfile           = $thermalProfile
+        UseLosslessScaling       = $useLosslessScaling
+        HasSavedProfile          = $hasSavedProfile
+        ThermalProfileSource     = if ($override -and $override.PSObject.Properties['ThermalProfile']) { 'Game' } else { 'Global' }
+        LosslessScalingSource    = if ($override -and $override.PSObject.Properties['UseLosslessScaling']) { 'Game' } else { 'Global' }
+    }
+}
+
+function Get-SteamGameProfile {
+    <#
+    .SYNOPSIS
+        Gets saved per-game profiles.
+
+    .DESCRIPTION
+        Returns saved thermal, Lossless Scaling, and process-name overrides from the
+        GameOverrides section of Settings.json. Supply an App ID to return one profile.
+
+    .PARAMETER AppId
+        Optional Steam App ID to retrieve.
+
+    .EXAMPLE
+        Get-SteamGameProfile
+
+    .EXAMPLE
+        Get-SteamGameProfile -AppId 2191500
+    #>
+    [CmdletBinding()]
+    param([string]$AppId)
+
+    $setting = Get-GameLauncherSetting
+    $profiles = @()
+    if ($setting.GameOverrides) {
+        foreach ($property in $setting.GameOverrides.PSObject.Properties) {
+            $value = $property.Value
+            $profiles += [pscustomobject]@{
+                AppId              = $property.Name
+                ThermalProfile     = if ($value.PSObject.Properties['ThermalProfile']) { $value.ThermalProfile } else { $null }
+                UseLosslessScaling = if ($value.PSObject.Properties['UseLosslessScaling']) { $value.UseLosslessScaling } else { $null }
+                ProcessName        = if ($value.PSObject.Properties['ProcessName']) { @($value.ProcessName) } else { @() }
+            }
+        }
+    }
+
+    if ($AppId) { $profiles = @($profiles | Where-Object AppId -EQ $AppId) }
+    $profiles | Sort-Object AppId
+}
+
+function Set-SteamGameProfile {
+    <#
+    .SYNOPSIS
+        Creates or updates a saved profile for one Steam game.
+
+    .DESCRIPTION
+        Stores per-game thermal profile, Lossless Scaling preference, and optional
+        process-name overrides. Only explicitly supplied properties are changed.
+
+    .PARAMETER AppId
+        Steam App ID to configure.
+
+    .PARAMETER ThermalProfile
+        Saved thermal profile: Quiet, Balanced, or Performance.
+
+    .PARAMETER UseLosslessScaling
+        Saved Lossless Scaling preference for this game.
+
+    .PARAMETER ProcessName
+        Optional process names without .exe for games requiring detection overrides.
+
+    .EXAMPLE
+        Set-SteamGameProfile -AppId 2191500 -ThermalProfile Performance -UseLosslessScaling $true
+
+    .EXAMPLE
+        Set-SteamGameProfile -AppId 413150 -ThermalProfile Balanced -UseLosslessScaling $false
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$AppId,
+        [ValidateSet('Quiet', 'Balanced', 'Performance')][string]$ThermalProfile,
+        [Nullable[bool]]$UseLosslessScaling,
+        [string[]]$ProcessName
+    )
+
+    $setting = Get-GameLauncherSetting
+    if (-not $setting.GameOverrides) {
+        $setting.GameOverrides = [pscustomobject]@{}
+    }
+
+    $existing = Get-GameOverride -Setting $setting -AppId $AppId
+    if (-not $existing) { $existing = [pscustomobject]@{} }
+
+    if ($PSBoundParameters.ContainsKey('ThermalProfile')) {
+        if ($existing.PSObject.Properties['ThermalProfile']) { $existing.ThermalProfile = $ThermalProfile }
+        else { $existing | Add-Member -MemberType NoteProperty -Name ThermalProfile -Value $ThermalProfile }
+    }
+    if ($PSBoundParameters.ContainsKey('UseLosslessScaling')) {
+        if ($existing.PSObject.Properties['UseLosslessScaling']) { $existing.UseLosslessScaling = [bool]$UseLosslessScaling }
+        else { $existing | Add-Member -MemberType NoteProperty -Name UseLosslessScaling -Value ([bool]$UseLosslessScaling) }
+    }
+    if ($PSBoundParameters.ContainsKey('ProcessName')) {
+        if ($existing.PSObject.Properties['ProcessName']) { $existing.ProcessName = @($ProcessName) }
+        else { $existing | Add-Member -MemberType NoteProperty -Name ProcessName -Value @($ProcessName) }
+    }
+
+    if ($setting.GameOverrides.PSObject.Properties[$AppId]) {
+        $setting.GameOverrides.$AppId = $existing
+    }
+    else {
+        $setting.GameOverrides | Add-Member -MemberType NoteProperty -Name $AppId -Value $existing
+    }
+
+    Write-GameLauncherSetting -Setting $setting
+    Get-SteamGameProfile -AppId $AppId
+}
+
+function Remove-SteamGameProfile {
+    <#
+    .SYNOPSIS
+        Removes a saved profile for one Steam game.
+
+    .PARAMETER AppId
+        Steam App ID whose saved profile should be removed.
+
+    .EXAMPLE
+        Remove-SteamGameProfile -AppId 2191500
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][string]$AppId)
+
+    $setting = Get-GameLauncherSetting
+    if (-not $setting.GameOverrides -or -not $setting.GameOverrides.PSObject.Properties[$AppId]) {
+        return
+    }
+
+    if ($PSCmdlet.ShouldProcess("Steam App ID $AppId", 'Remove saved game profile')) {
+        $setting.GameOverrides.PSObject.Properties.Remove($AppId)
+        Write-GameLauncherSetting -Setting $setting
+    }
+}
+
 function Start-SteamGameSession {
     <#
     .SYNOPSIS
         Launches and monitors one installed Steam game.
 
     .DESCRIPTION
-        Sets Legion Performance mode through an elevated helper, optionally starts
-        Lossless Scaling, launches the selected game through Steam in the current user
-        context, waits for the game to close, optionally closes Lossless Scaling, and
-        restores Legion Balanced mode.
-
-        The module normally detects game processes by executable path beneath the Steam
-        installation folder. Use ProcessName or a GameOverrides entry for games that use
-        external launchers, anti-cheat wrappers, or executables outside that folder.
+        Resolves a thermal profile and Lossless Scaling preference using this order:
+        explicit CLI override, saved per-game profile, then global defaults. Balanced
+        is the default baseline and does not require a thermal elevation call. Quiet
+        and Performance are applied before launch and Balanced is restored afterward.
 
     .PARAMETER Game
-        An installed-game object returned by Get-SteamInstalledGame. Accepts pipeline
-        input.
+        An installed-game object returned by Get-SteamInstalledGame.
 
     .PARAMETER AppId
         Steam App ID of an installed game.
 
+    .PARAMETER ThermalProfile
+        Thermal profile override for this launch: Quiet, Balanced, or Performance.
+        TDProfile is provided as a shorter alias for scripts and shortcuts.
+
     .PARAMETER ProcessName
-        Optional one or more process names without the .exe extension. Overrides path-
-        based process detection for this launch.
+        Optional process names without .exe for game detection.
 
     .PARAMETER UseLosslessScaling
-        Overrides the saved Lossless Scaling setting for this launch only.
+        Lossless Scaling override for this launch.
 
     .EXAMPLE
-        Start-SteamGameSession -AppId 2191500
+        Start-SteamGameSession -AppId 2191500 -ThermalProfile Performance
 
     .EXAMPLE
-        Start-SteamGameSession -AppId 2191500 -UseLosslessScaling $false
-
-    .EXAMPLE
-        Get-SteamInstalledGame -Name 'Vampires' | Start-SteamGameSession
-
-    .EXAMPLE
-        Start-SteamGameSession -AppId 2191500 -ProcessName 'VBR-Win64-Shipping'
+        Start-SteamGameSession -AppId 2191500 -TDProfile Quiet -UseLosslessScaling $false
     #>
     [CmdletBinding(DefaultParameterSetName = 'ByObject')]
     param(
-        [Parameter(Mandatory, ParameterSetName = 'ByObject', ValueFromPipeline)]
-        [psobject]$Game,
-        [Parameter(Mandatory, ParameterSetName = 'ById')]
-        [string]$AppId,
+        [Parameter(Mandatory, ParameterSetName = 'ByObject', ValueFromPipeline)][psobject]$Game,
+        [Parameter(Mandatory, ParameterSetName = 'ById')][string]$AppId,
+        [Alias('TDProfile')]
+        [ValidateSet('Quiet', 'Balanced', 'Performance')]
+        [string]$ThermalProfile,
         [string[]]$ProcessName,
         [Nullable[bool]]$UseLosslessScaling
     )
@@ -510,20 +693,44 @@ function Start-SteamGameSession {
 
         $setting = Get-GameLauncherSetting
         $override = Get-GameOverride -Setting $setting -AppId $Game.AppId
-        if (-not $ProcessName -and $override -and $override.ProcessName) {
+
+        if (-not $ProcessName -and $override -and $override.PSObject.Properties['ProcessName'] -and $override.ProcessName) {
             $ProcessName = @($override.ProcessName)
         }
 
-        $useLs = if ($PSBoundParameters.ContainsKey('UseLosslessScaling')) { [bool]$UseLosslessScaling } else { [bool]$setting.UseLosslessScaling }
+        if ($PSBoundParameters.ContainsKey('ThermalProfile')) {
+            $resolvedThermalProfile = $ThermalProfile
+        }
+        elseif ($override -and $override.PSObject.Properties['ThermalProfile'] -and $override.ThermalProfile) {
+            $resolvedThermalProfile = [string]$override.ThermalProfile
+        }
+        else {
+            $resolvedThermalProfile = [string]$setting.DefaultThermalProfile
+        }
+
+        if ($PSBoundParameters.ContainsKey('UseLosslessScaling')) {
+            $useLs = [bool]$UseLosslessScaling
+        }
+        elseif ($override -and $override.PSObject.Properties['UseLosslessScaling']) {
+            $useLs = [bool]$override.UseLosslessScaling
+        }
+        else {
+            $useLs = [bool]$setting.UseLosslessScaling
+        }
+
         $lsWasRunning = $false
         $lsStarted = $false
-        $performanceSet = $false
+        $thermalModeChanged = $false
 
         try {
-            # Elevate only the hardware thermal-mode change. Steam and the game remain
-            # in the normal interactive user session.
-            Set-ElevatedLegionThermalMode -Mode Performance
-            $performanceSet = $true
+            Write-Host "Thermal profile for this session: $resolvedThermalProfile"
+            if ($resolvedThermalProfile -ne 'Balanced') {
+                Set-ElevatedLegionThermalMode -Mode $resolvedThermalProfile
+                $thermalModeChanged = $true
+            }
+            else {
+                Write-Host 'Balanced is the baseline; no thermal mode change is required.'
+            }
 
             if ($useLs) {
                 $lsWasRunning = [bool](Get-Process -Name 'LosslessScaling' -ErrorAction SilentlyContinue)
@@ -538,8 +745,6 @@ function Start-SteamGameSession {
             }
             else { Write-Host 'Lossless Scaling is disabled for this launch.' }
 
-            # Steam URI launch returns immediately, so process detection below is used
-            # to determine when the actual game starts and exits.
             Write-Host "Launching $($Game.Name) through Steam..."
             Start-Process -FilePath "steam://rungameid/$($Game.AppId)"
 
@@ -562,13 +767,11 @@ function Start-SteamGameSession {
             Write-Host "$($Game.Name) has closed."
         }
         finally {
-            # Cleanup is intentionally centralized here so Balanced mode is restored
-            # even when game launch or process detection fails.
             if ($useLs -and $setting.CloseLosslessScalingAfterGame -and $lsStarted -and -not $lsWasRunning) {
                 Write-Host 'Closing Lossless Scaling...'
                 Get-Process -Name 'LosslessScaling' -ErrorAction SilentlyContinue | Stop-Process -ErrorAction SilentlyContinue
             }
-            if ($performanceSet) {
+            if ($thermalModeChanged) {
                 try { Set-ElevatedLegionThermalMode -Mode Balanced }
                 catch { Write-Warning ("Failed to restore Balanced mode: {0}" -f $_.Exception.Message) }
             }
@@ -579,15 +782,11 @@ function Start-SteamGameSession {
 function Show-LegionGoRuntimeSteamCompanion {
     <#
     .SYNOPSIS
-        Opens the interactive Legion Go Runtime Steam Companion menu.
+        Opens the interactive Steam Companion menu.
 
     .DESCRIPTION
-        Loads the installed Steam library, allows filtering by partial game name, and
-        starts the selected game through Start-SteamGameSession. The Settings menu can
-        toggle the global Lossless Scaling preference.
-
-    .EXAMPLE
-        Show-LegionGoRuntimeSteamCompanion
+        Searches installed Steam games, starts selected sessions, and provides settings
+        for global defaults and saved per-game profiles.
     #>
     [CmdletBinding()]
     param()
@@ -603,44 +802,105 @@ function Show-LegionGoRuntimeSteamCompanion {
 
         if ($choice -match '^(?i)q$') { return }
         if ($choice -match '^(?i)s$') {
-            $setting = Get-GameLauncherSetting
-            Write-Host "Lossless Scaling enabled: $($setting.UseLosslessScaling)"
-            $toggle = Read-Host 'Toggle Lossless Scaling? (Y/N)'
-            if ($toggle -match '^(?i)y$') {
-                Set-GameLauncherSetting -UseLosslessScaling (-not [bool]$setting.UseLosslessScaling) | Out-Null
+            $returnToMain = $false
+            while (-not $returnToMain) {
+                $setting = Get-GameLauncherSetting
+                Clear-Host
+                Write-Host '=== Steam Companion Settings ==='
+                Write-Host "[1] Default thermal profile: $($setting.DefaultThermalProfile)"
+                Write-Host "[2] Lossless Scaling enabled: $($setting.UseLosslessScaling)"
+                Write-Host '[3] Configure a game profile'
+                Write-Host '[4] View saved game profiles'
+                Write-Host '[5] Remove a game profile'
+                Write-Host '[6] Return'
+                $settingsChoice = Read-Host 'Selection'
+
+                switch ($settingsChoice) {
+                    '1' {
+                        Write-Host '[1] Quiet  [2] Balanced  [3] Performance'
+                        $profileChoice = Read-Host 'Default thermal profile'
+                        $profile = switch ($profileChoice) { '1' { 'Quiet' } '2' { 'Balanced' } '3' { 'Performance' } default { $null } }
+                        if ($profile) { Set-GameLauncherSetting -DefaultThermalProfile $profile | Out-Null }
+                    }
+                    '2' { Set-GameLauncherSetting -UseLosslessScaling (-not [bool]$setting.UseLosslessScaling) | Out-Null }
+                    '3' {
+                        $filter = Read-Host 'Enter part of the game name'
+                        $profileGames = @(Get-SteamInstalledGame -Name $filter)
+                        if ($profileGames.Count -eq 0) { Read-Host 'No matching games. Press Enter' | Out-Null; continue }
+                        for ($i=0; $i -lt $profileGames.Count; $i++) { Write-Host ('[{0}] {1} (App ID {2})' -f ($i+1),$profileGames[$i].Name,$profileGames[$i].AppId) }
+                        $selection = 0
+                        $value = Read-Host 'Game number'
+                        if (-not [int]::TryParse($value,[ref]$selection) -or $selection -lt 1 -or $selection -gt $profileGames.Count) { continue }
+                        $selectedGame = $profileGames[$selection-1]
+                        Write-Host '[1] Quiet  [2] Balanced  [3] Performance'
+                        $thermalChoice = Read-Host 'Thermal profile'
+                        $thermal = switch ($thermalChoice) { '1' {'Quiet'} '2' {'Balanced'} '3' {'Performance'} default {$null} }
+                        if (-not $thermal) { continue }
+                        $lsChoice = Read-Host 'Use Lossless Scaling for this game? (Y/N)'
+                        $gameLs = $lsChoice -match '^(?i)y$'
+                        Set-SteamGameProfile -AppId $selectedGame.AppId -ThermalProfile $thermal -UseLosslessScaling $gameLs | Out-Null
+                    }
+                    '4' {
+                        $profiles = @(Get-SteamGameProfile)
+                        if ($profiles.Count -eq 0) { Read-Host 'No saved game profiles. Press Enter' | Out-Null; continue }
+                        Clear-Host
+                        Write-Host '=== Saved Steam Game Profiles ==='
+                        foreach ($profile in $profiles) {
+                            $game = Get-SteamInstalledGame -AppId $profile.AppId | Select-Object -First 1
+                            $name = if ($game) { $game.Name } else { 'Unknown game' }
+                            $lsText = if ($profile.UseLosslessScaling) { 'On' } else { 'Off' }
+                            Write-Host ('{0} (App ID {1})' -f $name,$profile.AppId)
+                            Write-Host ('  Thermal profile: {0}' -f $profile.ThermalProfile)
+                            Write-Host ('  Lossless Scaling: {0}' -f $lsText)
+                            if (@($profile.ProcessName).Count -gt 0) {
+                                Write-Host ('  Process override: {0}' -f ($profile.ProcessName -join ', '))
+                            }
+                            Write-Host ''
+                        }
+                        Read-Host 'Press Enter to return' | Out-Null
+                    }
+                    '5' {
+                        $profiles = @(Get-SteamGameProfile)
+                        if ($profiles.Count -eq 0) { Read-Host 'No saved game profiles. Press Enter' | Out-Null; continue }
+                        for ($i=0; $i -lt $profiles.Count; $i++) {
+                            $game = Get-SteamInstalledGame -AppId $profiles[$i].AppId | Select-Object -First 1
+                            $name = if ($game) { $game.Name } else { 'Unknown game' }
+                            Write-Host ('[{0}] {1} (App ID {2})' -f ($i+1),$name,$profiles[$i].AppId)
+                        }
+                        $selection = 0
+                        $value = Read-Host 'Profile number to remove'
+                        if ([int]::TryParse($value,[ref]$selection) -and $selection -ge 1 -and $selection -le $profiles.Count) {
+                            Remove-SteamGameProfile -AppId $profiles[$selection-1].AppId -Confirm:$false
+                        }
+                    }
+                    '6' { $returnToMain = $true }
+                }
             }
             continue
         }
 
-        $matches = @(
-            if ($choice -match '^(?i)a$' -or [string]::IsNullOrWhiteSpace($choice)) {
-                $games
-            }
-            else {
-                $games | Where-Object Name -Like "*$choice*"
-            }
-        )
-
-        if ($matches.Count -eq 0) {
-            Write-Host 'No matching games found.'
-            Read-Host 'Press Enter to continue' | Out-Null
-            continue
+        $matches = @(if ($choice -match '^(?i)a$' -or [string]::IsNullOrWhiteSpace($choice)) { $games } else { $games | Where-Object Name -Like "*$choice*" })
+        if ($matches.Count -eq 0) { Write-Host 'No matching games found.'; Read-Host 'Press Enter to continue' | Out-Null; continue }
+        $setting = Get-GameLauncherSetting
+        for ($index=0; $index -lt $matches.Count; $index++) {
+            $resolved = Get-ResolvedSteamGameProfile -Game $matches[$index] -Setting $setting
+            $lsText = if ($resolved.UseLosslessScaling) { 'On' } else { 'Off' }
+            $sourceText = if ($resolved.HasSavedProfile) { 'Saved profile' } else { 'Global defaults' }
+            Write-Host ('[{0}] {1} (App ID {2}) [Thermal: {3} | Lossless Scaling: {4} | {5}]' -f ($index+1),$matches[$index].Name,$matches[$index].AppId,$resolved.ThermalProfile,$lsText,$sourceText)
         }
-
-        for ($index = 0; $index -lt $matches.Count; $index++) {
-            Write-Host ('[{0}] {1} (App ID {2})' -f ($index + 1), $matches[$index].Name, $matches[$index].AppId)
-        }
-
         $number = Read-Host 'Enter game number or press Enter to search again'
         if ([string]::IsNullOrWhiteSpace($number)) { continue }
         $selectedNumber = 0
-        if (-not [int]::TryParse($number, [ref]$selectedNumber) -or $selectedNumber -lt 1 -or $selectedNumber -gt $matches.Count) {
-            Write-Host 'Invalid selection.'
-            Start-Sleep -Seconds 1
-            continue
-        }
-
-        Start-SteamGameSession -Game $matches[$selectedNumber - 1]
+        if (-not [int]::TryParse($number,[ref]$selectedNumber) -or $selectedNumber -lt 1 -or $selectedNumber -gt $matches.Count) { Write-Host 'Invalid selection.'; Start-Sleep 1; continue }
+        $selectedGame = $matches[$selectedNumber-1]
+        $selectedProfile = Get-ResolvedSteamGameProfile -Game $selectedGame -Setting (Get-GameLauncherSetting)
+        $selectedLsText = if ($selectedProfile.UseLosslessScaling) { 'On' } else { 'Off' }
+        Write-Host ''
+        Write-Host ('Selected profile for {0}:' -f $selectedGame.Name)
+        Write-Host ('  Thermal profile: {0} ({1})' -f $selectedProfile.ThermalProfile,$selectedProfile.ThermalProfileSource)
+        Write-Host ('  Lossless Scaling: {0} ({1})' -f $selectedLsText,$selectedProfile.LosslessScalingSource)
+        Write-Host ''
+        Start-SteamGameSession -Game $selectedGame
         Read-Host 'Press Enter to return to the launcher' | Out-Null
     }
 }
@@ -648,8 +908,11 @@ function Show-LegionGoRuntimeSteamCompanion {
 # Export only the supported public surface. All other functions remain private.
 Export-ModuleMember -Function @(
     'Get-SteamInstalledGame',
+    'Get-SteamGameProfile',
     'Get-GameLauncherSetting',
     'Set-GameLauncherSetting',
+    'Set-SteamGameProfile',
+    'Remove-SteamGameProfile',
     'Start-SteamGameSession',
     'Show-LegionGoRuntimeSteamCompanion'
 )

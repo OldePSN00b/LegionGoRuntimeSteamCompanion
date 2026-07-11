@@ -1,25 +1,29 @@
 # Legion Go Runtime Steam Companion
 
-**Legion Go Runtime Steam Companion** is a Windows PowerShell 5.1 companion module for **Legion Go Runtime**. It discovers locally installed Steam games, lets you choose a game interactively or by Steam App ID, temporarily switches the Legion Go to Performance thermal mode, optionally starts Lossless Scaling, waits for the game to close, and restores Balanced mode afterward.
+**Legion Go Runtime Steam Companion** is a Windows PowerShell 5.1 companion module for **Legion Go Runtime**. It discovers locally installed Steam games, launches them in the normal user context, applies an optional per-game Legion thermal profile, optionally starts Lossless Scaling, waits for the game to close, and returns the Legion Go to Balanced mode afterward.
 
 ## Why this exists
 
-Legion Space already controls the Legion Go's normal hardware and gaming settings. This project does not replace Legion Space and does not claim to manage controls that Legion Space already handles.
+Legion Space already handles the Legion Go's normal hardware and gaming settings. This project does not replace Legion Space.
 
-The gap addressed here is automatic thermal-mode switching around a Steam game session. Legion Go Runtime exposes `Set-LegionThermalMode`; this companion module uses that function in a repeatable launch, monitor, and cleanup workflow.
+The gap addressed here is automatic thermal-mode switching around Steam game sessions. Legion Go Runtime exposes `Set-LegionThermalMode`; this companion uses that function to apply Quiet, Balanced, or Performance profiles while Steam and the game remain in the standard logged-in user context.
 
 ## Features
 
 - Discovers installed games across all registered Steam libraries.
-- Filters the installed library by partial game name.
-- Launches Steam and the selected game in the normal interactive user context.
-- Elevates only the Windows PowerShell helper that changes Legion thermal mode.
-- Optionally starts Lossless Scaling minimized.
-- Waits for the selected game to start and fully exit.
-- Restores Legion Balanced mode after the game closes or when launch monitoring fails.
-- Supports per-game process-name overrides for unusual launchers and anti-cheat wrappers.
-- Stores settings under `%LOCALAPPDATA%\LegionGoRuntimeSteamCompanion`.
-- Migrates settings from earlier SteamGameLauncher and UniversalGameLauncher releases.
+- Interactive game search and selection.
+- Direct CLI launching by Steam App ID.
+- Global thermal baseline with **Balanced** as the default.
+- Per-game Quiet, Balanced, or Performance profiles.
+- Visible resolved thermal and Lossless Scaling settings in the game picker before launch.
+- Interactive viewing of all saved game profiles.
+- CLI thermal override with `-ThermalProfile` or the shorter `-TDProfile` alias.
+- Per-game and per-launch Lossless Scaling preferences.
+- Optional automatic Lossless Scaling startup and cleanup.
+- Game process monitoring with optional process-name overrides.
+- Automatic restoration to Balanced after Quiet or Performance sessions.
+- Balanced sessions skip thermal elevation entirely.
+- Settings migration from earlier SteamGameLauncher and UniversalGameLauncher releases.
 
 ## Requirements
 
@@ -30,12 +34,12 @@ The gap addressed here is automatic thermal-mode switching around a Steam game s
 
 ## First-time setup
 
-1. Install Steam and confirm that the games you want to launch are installed.
+1. Install Steam and confirm your games are installed.
 2. Install Legion Go Runtime.
-3. Confirm that `Set-LegionThermalMode` is available from your Windows PowerShell 5.1 profile.
+3. Confirm `Set-LegionThermalMode` is available in Windows PowerShell 5.1.
 4. Optional: install Lossless Scaling.
-5. Optional: open Lossless Scaling and create or edit a profile for each game you intend to use with the companion.
-6. Optional: associate each Lossless Scaling profile with the correct game executable and configure the desired scaling, frame generation, rendering, and performance options.
+5. Optional: create a Lossless Scaling profile in its GUI for each game you intend to use.
+6. Optional: associate each profile with the correct game executable and configure the desired scaling and frame-generation settings.
 7. Optional: enable **Run as administrator** in Lossless Scaling settings.
 8. Start the companion from a normal, unelevated Windows PowerShell 5.1 session.
 
@@ -43,42 +47,31 @@ The gap addressed here is automatic thermal-mode switching around a Steam game s
 
 ### User Account Control
 
-The companion must elevate Windows PowerShell to change Legion thermal mode before and after a game session.
+Quiet and Performance sessions elevate Windows PowerShell to change the Legion thermal mode before the game starts and restore Balanced after it closes. If UAC is enabled, Windows can display a prompt for each change.
 
-When User Account Control is enabled, Windows can display an elevation prompt when switching to Performance mode and another prompt when restoring Balanced mode. Those prompts can interrupt an otherwise hands-off launch workflow. This may be uncommon on a dedicated gaming tablet, but the module does not assume UAC is disabled.
+Balanced is the baseline. A session resolved to Balanced performs no thermal-mode elevation, so lightweight games can launch without thermal UAC prompts.
 
-Steam and the game are not launched elevated by the module. They remain in the normal logged-in user context.
+Steam and the game are never launched elevated by this module.
 
 ### Lossless Scaling
 
-When Lossless Scaling integration is enabled, open Lossless Scaling settings and turn on **Run as administrator**.
+The companion starts and stops Lossless Scaling, but it does not configure profiles.
 
-Without that option enabled, Lossless Scaling may start but fail to hook or interact correctly with the game because the processes can run at different Windows integrity levels.
+Before using Lossless Scaling integration:
 
-The companion does not configure Lossless Scaling profiles. Before using the integration, create or edit a profile for the game in the Lossless Scaling GUI, associate that profile with the game's executable, and save your preferred scaling and frame-generation settings.
+1. Open Lossless Scaling.
+2. Create or edit a profile for the game.
+3. Associate it with the game's executable.
+4. Save the desired settings.
+5. Enable **Run as administrator** in Lossless Scaling settings.
 
-When the companion starts Lossless Scaling, Lossless Scaling is responsible for detecting the running game and applying the matching profile. If no matching profile exists, Lossless Scaling may still start, but the intended game-specific settings will not be applied.
-
-The companion does not change the **Run as administrator** setting or create, edit, or select Lossless Scaling profiles automatically.
-
-## Security
-
-The companion requests administrator privileges only for the thermal-mode changes performed by the private helper script. Steam and the selected game are launched from the original unelevated PowerShell session and remain in the normal user context.
-
-The module does not store credentials, add persistent elevated tasks, or keep an elevated PowerShell process running for the duration of gameplay.
-
-## Known limitations
-
-- UAC prompts can interrupt the launch and cleanup workflow when UAC is enabled.
-- Lossless Scaling profiles must be created and associated with game executables manually in the Lossless Scaling GUI.
-- Lossless Scaling must have **Run as administrator** enabled for reliable integration.
-- Games that use external launchers, anti-cheat wrappers, or executables outside the Steam installation directory may require a process-name override.
+Without a matching profile, Lossless Scaling may start but will not apply the intended game-specific configuration.
 
 ## Installation
 
 1. Download and extract the release ZIP.
 2. Keep the complete `LegionGoRuntimeSteamCompanion` folder together.
-3. Run the launcher from a normal, unelevated Windows PowerShell 5.1 session:
+3. Run:
 
 ```powershell
 .\Start-LegionGoRuntimeSteamCompanion.ps1
@@ -91,122 +84,146 @@ Import-Module .\LegionGoRuntimeSteamCompanion.psd1 -Force
 Show-LegionGoRuntimeSteamCompanion
 ```
 
-List every installed Steam game:
+List installed games:
 
 ```powershell
 Get-SteamInstalledGame
 ```
 
-Find games by partial name:
-
-```powershell
-Get-SteamInstalledGame -Name 'Vampire'
-```
-
-Launch by Steam App ID:
+Launch using saved settings and profiles:
 
 ```powershell
 Start-SteamGameSession -AppId 2191500
 ```
 
-Disable Lossless Scaling for one launch:
+Force Performance for one launch:
 
 ```powershell
-Start-SteamGameSession -AppId 2191500 -UseLosslessScaling $false
+Start-SteamGameSession -AppId 2191500 -ThermalProfile Performance
 ```
 
-Use an explicit process name for a game with unusual process behavior:
+Use the shorter CLI alias:
 
 ```powershell
-Start-SteamGameSession -AppId 2191500 -ProcessName 'VBR-Win64-Shipping'
+Start-SteamGameSession -AppId 2191500 -TDProfile Quiet
 ```
 
-## Settings
+Force Balanced and disable Lossless Scaling for one launch:
 
-The settings file is created at:
-
-```text
-%LOCALAPPDATA%\LegionGoRuntimeSteamCompanion\Settings.json
+```powershell
+Start-SteamGameSession -AppId 2191500 -TDProfile Balanced -UseLosslessScaling $false
 ```
 
-View current settings:
+PowerShell parameter syntax does not use an equals sign. Use `-TDProfile Performance`, not `-TDProfile = Performance`.
+
+## Profile resolution order
+
+For each session, settings are resolved in this order:
+
+1. Explicit CLI parameters.
+2. Saved per-game profile.
+3. Global defaults.
+
+The global thermal default is Balanced.
+
+## Global settings
+
+View settings:
 
 ```powershell
 Get-GameLauncherSetting
 ```
 
-Disable Lossless Scaling globally:
+Set the global thermal default:
 
 ```powershell
-Set-GameLauncherSetting -UseLosslessScaling $false
+Set-GameLauncherSetting -DefaultThermalProfile Balanced
 ```
 
-Change process polling and startup timeout:
+Set the global Lossless Scaling preference:
 
 ```powershell
-Set-GameLauncherSetting -GameStartTimeoutSeconds 600 -PollIntervalSeconds 3
+Set-GameLauncherSetting -UseLosslessScaling $true
 ```
 
-Set a manual Lossless Scaling executable path:
+Settings are stored at:
+
+```text
+%LOCALAPPDATA%\LegionGoRuntimeSteamCompanion\Settings.json
+```
+
+## Per-game profiles
+
+Create or update a profile:
 
 ```powershell
-Set-GameLauncherSetting -LosslessScalingPathOverride 'D:\SteamLibrary\steamapps\common\Lossless Scaling\LosslessScaling.exe'
+Set-SteamGameProfile `
+    -AppId 2191500 `
+    -ThermalProfile Performance `
+    -UseLosslessScaling $true
 ```
 
-## Per-game process overrides
+Configure a lightweight game:
 
-Most games are detected by finding processes whose executable path is beneath the selected Steam installation directory. Games that use external launchers, anti-cheat wrappers, or executables outside that directory may need an override.
-
-Example `GameOverrides` entry in `Settings.json`:
-
-```json
-{
-  "GameOverrides": {
-    "2191500": {
-      "ProcessName": [
-        "VBR-Win64-Shipping"
-      ]
-    }
-  }
-}
+```powershell
+Set-SteamGameProfile `
+    -AppId 413150 `
+    -ThermalProfile Balanced `
+    -UseLosslessScaling $false
 ```
 
-Process names should normally be entered without `.exe`.
+View saved profiles:
+
+```powershell
+Get-SteamGameProfile
+Get-SteamGameProfile -AppId 2191500
+```
+
+Remove a saved profile:
+
+```powershell
+Remove-SteamGameProfile -AppId 2191500
+```
+
+Per-game profiles can also be configured, viewed, or removed from the interactive Settings menu. The game picker displays the effective thermal profile and Lossless Scaling state for each game, including whether the values come from a saved profile or the global defaults.
+
+## Process overrides
+
+Games using external launchers, anti-cheat wrappers, or executables outside their Steam installation folder may require explicit process names:
+
+```powershell
+Set-SteamGameProfile `
+    -AppId 2191500 `
+    -ProcessName 'VBR-Win64-Shipping'
+```
+
+Process names should normally omit `.exe`.
+
+## Security
+
+Administrator privileges are requested only for thermal-mode changes. The companion does not store credentials, create persistent elevated scheduled tasks, or keep an elevated PowerShell process running during gameplay.
+
+## Known limitations
+
+- UAC prompts can interrupt Quiet and Performance workflows.
+- Lossless Scaling profiles must be configured manually in its GUI.
+- Lossless Scaling must have **Run as administrator** enabled for reliable integration.
+- Some games require process-name overrides.
+- The companion assumes Balanced is the post-session baseline; it does not query and restore an arbitrary pre-launch thermal mode.
 
 ## Approved PowerShell verbs
 
-Every module function name uses a verb returned by `Get-Verb`. The current function set uses only:
+Every module function uses a verb returned by `Get-Verb`. Unapproved-verb warnings are treated as bugs.
 
-- `Get`
-- `Set`
-- `Show`
-- `Start`
-- `Write`
-
-Unapproved-verb warnings are treated as bugs.
-
-## Getting command help
+## Command help
 
 ```powershell
-Get-Help Get-SteamInstalledGame -Full
-Get-Help Get-GameLauncherSetting -Full
-Get-Help Set-GameLauncherSetting -Full
 Get-Help Start-SteamGameSession -Full
-Get-Help Show-LegionGoRuntimeSteamCompanion -Full
+Get-Help Set-SteamGameProfile -Full
+Get-Help Get-SteamGameProfile -Full
+Get-Help Remove-SteamGameProfile -Full
+Get-Help Set-GameLauncherSetting -Full
 ```
-
-## How it works
-
-1. The module requests Performance mode through an elevated Windows PowerShell 5.1 helper.
-2. Lossless Scaling is optionally started in the logged-in user's session.
-3. Steam launches the selected game in the normal user context.
-4. The module waits for the game process to appear and then fully exit.
-5. Lossless Scaling is closed only when the module started it.
-6. Balanced mode is requested from a `finally` block.
-
-## Scope
-
-This release supports Steam. Support for other gaming platforms may be considered later, but this release does not claim or imply support for them.
 
 ## License
 

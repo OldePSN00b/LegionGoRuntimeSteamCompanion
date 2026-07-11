@@ -1,16 +1,19 @@
 @{
     RootModule        = 'LegionGoRuntimeSteamCompanion.psm1'
-    ModuleVersion     = '1.1.1'
+    ModuleVersion     = '1.2.3'
     GUID              = '5a3fb632-7fd6-4d5b-9536-4e08930ebc80'
     Author            = '0ldePSN00b'
     CompanyName       = 'Independent'
     Copyright         = '(c) 2026 0ldePSN00b. All rights reserved.'
-    Description       = 'Companion module for Legion Go Runtime that launches installed Steam games, temporarily applies Legion Performance thermal mode, optionally starts Lossless Scaling, and restores Balanced mode after the game exits.'
+    Description       = 'Companion module for Legion Go Runtime that launches installed Steam games with global, per-game, or CLI-selected thermal profiles and optional Lossless Scaling integration.'
     PowerShellVersion = '5.1'
     FunctionsToExport = @(
         'Get-SteamInstalledGame',
+        'Get-SteamGameProfile',
         'Get-GameLauncherSetting',
         'Set-GameLauncherSetting',
+        'Set-SteamGameProfile',
+        'Remove-SteamGameProfile',
         'Start-SteamGameSession',
         'Show-LegionGoRuntimeSteamCompanion'
     )
@@ -21,7 +24,7 @@
         PSData = @{
             Tags         = @('Steam', 'LegionGo', 'LegionGoRuntime', 'SteamCompanion', 'LosslessScaling', 'Gaming')
             ProjectUri   = ''
-            ReleaseNotes = 'Documents first-time setup, Lossless Scaling profile requirements, the Run as administrator requirement, security behavior, and known limitations. No intended game-session behavior changes.'
+            ReleaseNotes = 'Fixes a StrictMode error when viewing a saved game profile that has zero or one process override values.'
         }
     }
 }

@@ -9,12 +9,12 @@
     normal use.
 
 .PARAMETER Mode
-    Thermal mode to apply. Supported values are Balanced and Performance.
+    Thermal mode to apply. Supported values are Quiet, Balanced, and Performance.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Balanced', 'Performance')]
+    [ValidateSet('Quiet', 'Balanced', 'Performance')]
     [string]$Mode
 )
 
