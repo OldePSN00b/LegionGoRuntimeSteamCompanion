@@ -1,6 +1,6 @@
 @{
     RootModule        = 'LegionGoRuntimeSteamCompanion.psm1'
-    ModuleVersion     = '1.2.3'
+    ModuleVersion     = '1.2.4'
     GUID              = '5a3fb632-7fd6-4d5b-9536-4e08930ebc80'
     Author            = '0ldePSN00b'
     CompanyName       = 'Independent'
@@ -24,7 +24,7 @@
         PSData = @{
             Tags         = @('Steam', 'LegionGo', 'LegionGoRuntime', 'SteamCompanion', 'LosslessScaling', 'Gaming')
             ProjectUri   = ''
-            ReleaseNotes = 'Fixes a StrictMode error when viewing a saved game profile that has zero or one process override values.'
+            ReleaseNotes = 'Improves process-session isolation, targets Lossless Scaling cleanup to the process started by the module, validates persisted settings and non-empty profiles, writes settings atomically, and adds Pester regression coverage.'
         }
     }
 }

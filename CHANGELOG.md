@@ -2,6 +2,16 @@
 
 All notable changes to Legion Go Runtime Steam Companion are documented here.
 
+## 1.2.4
+
+- Isolated saved process-name overrides for each piped game session.
+- Excluded matching processes that were already running before a game launch from session detection.
+- Limited Lossless Scaling cleanup to the process started by the current session.
+- Rejected empty saved game profiles and invalid persisted setting values with clear errors.
+- Normalized supported legacy Boolean strings, numeric settings, and process-name collections.
+- Wrote settings through a same-directory temporary file to reduce the risk of partial JSON writes.
+- Added Windows PowerShell 5.1-compatible Pester regression tests for the module contract, approved verbs, settings validation, profile collections, and piped sessions.
+
 ## 1.2.3
 
 - Fixed a StrictMode `.Count` error when viewing a saved game profile with no process override or a single process override.

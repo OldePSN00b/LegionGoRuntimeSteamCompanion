@@ -21,6 +21,8 @@ The gap addressed here is automatic thermal-mode switching around Steam game ses
 - Per-game and per-launch Lossless Scaling preferences.
 - Optional automatic Lossless Scaling startup and cleanup.
 - Game process monitoring with optional process-name overrides.
+- Session process isolation that ignores matching processes already running before launch.
+- Validated settings with interruption-resistant file updates.
 - Automatic restoration to Balanced after Quiet or Performance sessions.
 - Balanced sessions skip thermal elevation entirely.
 - Settings migration from earlier SteamGameLauncher and UniversalGameLauncher releases.
@@ -152,6 +154,10 @@ Settings are stored at:
 %LOCALAPPDATA%\LegionGoRuntimeSteamCompanion\Settings.json
 ```
 
+Settings loaded from disk are validated before use. Legacy string representations of
+Boolean and numeric values are normalized when unambiguous; invalid values produce a
+clear error instead of being silently coerced.
+
 ## Per-game profiles
 
 Create or update a profile:
@@ -162,6 +168,9 @@ Set-SteamGameProfile `
     -ThermalProfile Performance `
     -UseLosslessScaling $true
 ```
+
+At least one of `-ThermalProfile`, `-UseLosslessScaling`, or `-ProcessName` must be
+provided when creating or updating a profile.
 
 Configure a lightweight game:
 
@@ -198,6 +207,17 @@ Set-SteamGameProfile `
 ```
 
 Process names should normally omit `.exe`.
+
+Processes with a matching name that were already running before Steam was launched are
+not treated as part of the new game session.
+
+## Tests
+
+The Pester suite supports Windows PowerShell 5.1 and the bundled Pester 3.4.0:
+
+```powershell
+Invoke-Pester .\tests
+```
 
 ## Security
 
