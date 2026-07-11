@@ -50,6 +50,34 @@ Describe 'Settings validation' {
     }
 }
 
+Describe 'Settings persistence' {
+    InModuleScope LegionGoRuntimeSteamCompanion {
+        It 'atomically replaces an existing settings file under Windows PowerShell 5.1' {
+            $originalDirectory = $script:SettingsDirectory
+            $originalPath = $script:SettingsPath
+            $testDirectory = Join-Path -Path $TestDrive -ChildPath 'Settings'
+            $script:SettingsDirectory = $testDirectory
+            $script:SettingsPath = Join-Path -Path $testDirectory -ChildPath 'Settings.json'
+
+            try {
+                $setting = Get-DefaultGameLauncherSetting
+                Write-GameLauncherSetting -Setting $setting
+                $setting.DefaultThermalProfile = 'Performance'
+                Write-GameLauncherSetting -Setting $setting
+
+                $saved = Get-Content -LiteralPath $script:SettingsPath -Raw | ConvertFrom-Json
+                $saved.DefaultThermalProfile | Should Be 'Performance'
+                @(Get-ChildItem -LiteralPath $testDirectory -Filter 'Settings.*.tmp').Count | Should Be 0
+                @(Get-ChildItem -LiteralPath $testDirectory -Filter 'Settings.*.bak').Count | Should Be 0
+            }
+            finally {
+                $script:SettingsDirectory = $originalDirectory
+                $script:SettingsPath = $originalPath
+            }
+        }
+    }
+}
+
 Describe 'Saved game profiles' {
     InModuleScope LegionGoRuntimeSteamCompanion {
         It 'rejects an empty saved profile' {

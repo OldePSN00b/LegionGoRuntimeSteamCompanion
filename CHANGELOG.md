@@ -2,6 +2,11 @@
 
 All notable changes to Legion Go Runtime Steam Companion are documented here.
 
+## 1.2.5
+
+- Fixed settings updates failing under Windows PowerShell 5.1 because `System.IO.File.Replace` received a null backup path that PowerShell bound as an invalid empty path.
+- Added regression coverage that performs an initial settings write followed by an atomic replacement and verifies temporary files are cleaned up.
+
 ## 1.2.4
 
 - Isolated saved process-name overrides for each piped game session.

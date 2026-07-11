@@ -154,7 +154,8 @@ Settings are stored at:
 %LOCALAPPDATA%\LegionGoRuntimeSteamCompanion\Settings.json
 ```
 
-Settings loaded from disk are validated before use. Legacy string representations of
+Settings loaded from disk are validated before use. Updates use a same-directory atomic
+replacement with temporary backup cleanup. Legacy string representations of
 Boolean and numeric values are normalized when unambiguous; invalid values produce a
 clear error instead of being silently coerced.
 

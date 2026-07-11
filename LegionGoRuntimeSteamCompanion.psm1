@@ -60,10 +60,11 @@ function Write-GameLauncherSetting {
     }
 
     $temporaryPath = Join-Path -Path $script:SettingsDirectory -ChildPath ("Settings.{0}.tmp" -f [guid]::NewGuid().ToString('N'))
+    $backupPath = Join-Path -Path $script:SettingsDirectory -ChildPath ("Settings.{0}.bak" -f [guid]::NewGuid().ToString('N'))
     try {
         $Setting | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporaryPath -Encoding UTF8
         if (Test-Path -LiteralPath $script:SettingsPath -PathType Leaf) {
-            [System.IO.File]::Replace($temporaryPath, $script:SettingsPath, $null)
+            [System.IO.File]::Replace($temporaryPath, $script:SettingsPath, $backupPath)
         }
         else {
             Move-Item -LiteralPath $temporaryPath -Destination $script:SettingsPath
@@ -72,6 +73,9 @@ function Write-GameLauncherSetting {
     finally {
         if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
             Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
+            Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
         }
     }
 }

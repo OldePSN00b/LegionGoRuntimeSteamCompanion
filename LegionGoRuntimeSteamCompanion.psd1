@@ -1,6 +1,6 @@
 @{
     RootModule        = 'LegionGoRuntimeSteamCompanion.psm1'
-    ModuleVersion     = '1.2.4'
+    ModuleVersion     = '1.2.5'
     GUID              = '5a3fb632-7fd6-4d5b-9536-4e08930ebc80'
     Author            = '0ldePSN00b'
     CompanyName       = 'Independent'
@@ -24,7 +24,7 @@
         PSData = @{
             Tags         = @('Steam', 'LegionGo', 'LegionGoRuntime', 'SteamCompanion', 'LosslessScaling', 'Gaming')
             ProjectUri   = ''
-            ReleaseNotes = 'Improves process-session isolation, targets Lossless Scaling cleanup to the process started by the module, validates persisted settings and non-empty profiles, writes settings atomically, and adds Pester regression coverage.'
+            ReleaseNotes = 'Fixes atomic settings replacement under Windows PowerShell 5.1 by supplying a valid same-directory backup path to System.IO.File.Replace.'
         }
     }
 }
