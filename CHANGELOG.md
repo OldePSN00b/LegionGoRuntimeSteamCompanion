@@ -2,6 +2,11 @@
 
 All notable changes to Legion Go Runtime Steam Companion are documented here.
 
+## 1.2.6
+
+- Hid the short-lived elevated PowerShell console used for thermal-mode changes while preserving visible UAC consent and the interactive companion window.
+- Added regression coverage for the helper's hidden window style, elevation, and synchronous process handling.
+
 ## 1.2.5
 
 - Fixed settings updates failing under Windows PowerShell 5.1 because `System.IO.File.Replace` received a null backup path that PowerShell bound as an invalid empty path.

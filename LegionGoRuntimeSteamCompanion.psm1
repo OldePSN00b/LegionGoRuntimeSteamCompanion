@@ -493,7 +493,7 @@ function Set-ElevatedLegionThermalMode {
         '-ExecutionPolicy', 'Bypass',
         '-File', ('"{0}"' -f $script:ThermalHelperPath),
         '-Mode', $Mode
-    ) -Wait -PassThru
+    ) -WindowStyle Hidden -Wait -PassThru
 
     if ($process.ExitCode -ne 0) {
         throw "The elevated thermal helper failed to set $Mode mode. Exit code: $($process.ExitCode)"

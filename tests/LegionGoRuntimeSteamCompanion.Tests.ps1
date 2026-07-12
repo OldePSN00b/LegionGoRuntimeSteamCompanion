@@ -132,3 +132,21 @@ Describe 'Game session process resolution' {
         }
     }
 }
+
+Describe 'Thermal helper launch behavior' {
+    InModuleScope LegionGoRuntimeSteamCompanion {
+        It 'hides the elevated PowerShell console while preserving UAC elevation' {
+            Mock Test-Path { $true }
+            Mock Start-Process { [pscustomobject]@{ ExitCode = 0 } }
+
+            Set-ElevatedLegionThermalMode -Mode Performance
+
+            Assert-MockCalled Start-Process -Times 1 -Exactly -ParameterFilter {
+                $Verb -eq 'RunAs' -and
+                $WindowStyle -eq 'Hidden' -and
+                $Wait -and
+                $PassThru
+            }
+        }
+    }
+}

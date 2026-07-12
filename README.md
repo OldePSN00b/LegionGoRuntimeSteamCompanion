@@ -25,6 +25,7 @@ The gap addressed here is automatic thermal-mode switching around Steam game ses
 - Validated settings with interruption-resistant file updates.
 - Automatic restoration to Balanced after Quiet or Performance sessions.
 - Balanced sessions skip thermal elevation entirely.
+- Hidden background PowerShell consoles for thermal-mode changes that do not require interaction.
 - Settings migration from earlier SteamGameLauncher and UniversalGameLauncher releases.
 
 ## Requirements
@@ -50,6 +51,8 @@ The gap addressed here is automatic thermal-mode switching around Steam game ses
 ### User Account Control
 
 Quiet and Performance sessions elevate Windows PowerShell to change the Legion thermal mode before the game starts and restore Balanced after it closes. If UAC is enabled, Windows can display a prompt for each change.
+
+The elevated thermal helper runs with its PowerShell console hidden. UAC consent remains visible when required, while the companion's interactive window stays open for menus and status updates.
 
 Balanced is the baseline. A session resolved to Balanced performs no thermal-mode elevation, so lightweight games can launch without thermal UAC prompts.
 
