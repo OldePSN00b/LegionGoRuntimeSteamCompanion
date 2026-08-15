@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'LegionGoRuntimeSteamCompanion.psm1'
-    ModuleVersion     = '1.2.7'
+    ModuleVersion     = '1.3.0'
     GUID              = '5a3fb632-7fd6-4d5b-9536-4e08930ebc80'
     Author            = '0ldePSN00b'
     CompanyName       = 'Independent'
@@ -24,7 +24,7 @@
         PSData = @{
             Tags         = @('Steam', 'LegionGo', 'LegionGoRuntime', 'SteamCompanion', 'LosslessScaling', 'Gaming')
             ProjectUri   = ''
-            ReleaseNotes = 'Hides the elevated thermal-mode helper console while preserving visible UAC consent and the interactive companion window.'
+            ReleaseNotes = 'Adds launcher refresh, direct-session source reporting, inherited-profile display, standardized informational output, and self-contained LegionGoRuntime thermal integration.'
         }
     }
 }

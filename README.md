@@ -12,6 +12,7 @@ The gap addressed here is automatic thermal-mode switching around Steam game ses
 
 - Discovers installed games across all registered Steam libraries.
 - Interactive game search and selection.
+- Interactive installed-library refresh.
 - Direct CLI launching by Steam App ID.
 - Global thermal baseline with **Balanced** as the default.
 - Per-game Quiet, Balanced, or Performance profiles.
@@ -32,14 +33,14 @@ The gap addressed here is automatic thermal-mode switching around Steam game ses
 
 - Windows PowerShell 5.1.
 - Steam for Windows.
-- Legion Go Runtime, with `Set-LegionThermalMode` available from the current user's Windows PowerShell 5.1 profile.
+- LegionGoRuntime installed where Windows PowerShell 5.1 can import it by module name.
 - Optional: Lossless Scaling installed through Steam.
 
 ## First-time setup
 
 1. Install Steam and confirm your games are installed.
 2. Install Legion Go Runtime.
-3. Confirm `Set-LegionThermalMode` is available in Windows PowerShell 5.1.
+3. Confirm `Import-Module LegionGoRuntime` succeeds in Windows PowerShell 5.1.
 4. Optional: install Lossless Scaling.
 5. Optional: create a Lossless Scaling profile in its GUI for each game you intend to use.
 6. Optional: associate each profile with the correct game executable and configure the desired scaling and frame-generation settings.
@@ -199,6 +200,8 @@ Remove-SteamGameProfile -AppId 2191500
 ```
 
 Per-game profiles can also be configured, viewed, or removed from the interactive Settings menu. The game picker displays the effective thermal profile and Lossless Scaling state for each game, including whether the values come from a saved profile or the global defaults.
+
+Use `R` from the main interactive menu to rescan installed Steam libraries.
 
 ## Process overrides
 

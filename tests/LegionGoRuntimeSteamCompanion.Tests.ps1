@@ -47,6 +47,13 @@ Describe 'Settings validation' {
 
             { ConvertTo-NormalizedGameLauncherSetting -Setting $setting } | Should Throw
         }
+
+        It 'rejects a persisted profile whose process override is empty' {
+            $setting = Get-DefaultGameLauncherSetting
+            $setting.GameOverrides | Add-Member NoteProperty '12345' ([pscustomobject]@{ ProcessName = @() })
+
+            { ConvertTo-NormalizedGameLauncherSetting -Setting $setting } | Should Throw
+        }
     }
 }
 
@@ -82,6 +89,12 @@ Describe 'Saved game profiles' {
     InModuleScope LegionGoRuntimeSteamCompanion {
         It 'rejects an empty saved profile' {
             { Set-SteamGameProfile -AppId '12345' } | Should Throw
+        }
+
+        It 'rejects an empty process override as a new profile' {
+            Mock Get-GameLauncherSetting { Get-DefaultGameLauncherSetting }
+
+            { Set-SteamGameProfile -AppId '12345' -ProcessName @() } | Should Throw
         }
 
         It 'keeps a single process override as a collection' {
@@ -145,8 +158,37 @@ Describe 'Thermal helper launch behavior' {
                 $Verb -eq 'RunAs' -and
                 $WindowStyle -eq 'Hidden' -and
                 $Wait -and
-                $PassThru
+                $PassThru -and
+                $ArgumentList -contains '-NoProfile'
             }
+        }
+
+        It 'imports LegionGoRuntime in the elevated helper' {
+            $helperContent = Get-Content -LiteralPath $script:ThermalHelperPath -Raw
+
+            $helperContent | Should Match 'Import-Module LegionGoRuntime'
+            $helperContent | Should Match 'Set-LegionThermalMode -ModeName'
+        }
+    }
+}
+
+Describe 'Interactive library actions' {
+    InModuleScope LegionGoRuntimeSteamCompanion {
+        It 'rescans the Steam library when R is selected' {
+            $script:answers = @('r', 'q')
+            Mock Read-Host {
+                $answer = $script:answers[0]
+                $script:answers = @($script:answers | Select-Object -Skip 1)
+                $answer
+            }
+            Mock Clear-Host { }
+            Mock Write-Host { }
+            Mock Start-Sleep { }
+            Mock Get-SteamInstalledGame { [pscustomobject]@{ Name = 'Example'; AppId = '1'; InstallPath = 'C:\Games\Example' } }
+
+            Show-LegionGoRuntimeSteamCompanion
+
+            Assert-MockCalled Get-SteamInstalledGame -Times 2 -Exactly -Scope It
         }
     }
 }

@@ -1,5 +1,20 @@
 ﻿# Changelog
 
+## 1.3.0 - 2026-08-15
+
+- Added an explicit interactive library refresh action.
+- Added Explicit, Game, or Global source labels to direct-session thermal and
+  Lossless Scaling summaries.
+- Corrected saved-profile displays so missing values are shown as inheriting
+  the global default rather than blank or disabled.
+- Standardized non-interactive informational output on `Write-Output` while
+  keeping interactive menus on `Write-Host` and `Read-Host`.
+- Updated the elevated helper to import and validate LegionGoRuntime directly
+  instead of depending on a PowerShell profile function.
+- Added regression coverage for the self-contained thermal helper contract.
+- Rejected persisted or newly created profiles whose only value is an empty
+  process-name override.
+
 ## 1.2.7 - 2026-08-15
 
 - Updated `Start-LegionGoRuntimeSteamCompanion.ps1` to a dual-mode wrapper.

@@ -143,7 +143,18 @@ function ConvertTo-NormalizedGameLauncherSetting {
             }
         }
         if ($override.PSObject.Properties['ProcessName']) {
-            $override.ProcessName = [string[]]@($override.ProcessName | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            $normalizedProcessNames = [string[]]@($override.ProcessName | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if (@($normalizedProcessNames).Count -gt 0) {
+                $override.ProcessName = $normalizedProcessNames
+            }
+            else {
+                $override.PSObject.Properties.Remove('ProcessName')
+            }
+        }
+        if (-not $override.PSObject.Properties['ThermalProfile'] -and
+            -not $override.PSObject.Properties['UseLosslessScaling'] -and
+            -not $override.PSObject.Properties['ProcessName']) {
+            throw "GameOverrides.$($property.Name) must contain ThermalProfile, UseLosslessScaling, or ProcessName."
         }
     }
 
@@ -488,8 +499,9 @@ function Set-ElevatedLegionThermalMode {
         throw "Thermal helper was not found: $script:ThermalHelperPath"
     }
 
-    Write-Host "Requesting $Mode thermal mode..."
+    Write-Output "Requesting $Mode thermal mode..."
     $process = Start-Process -FilePath $script:WindowsPowerShellPath -Verb RunAs -ArgumentList @(
+        '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-File', ('"{0}"' -f $script:ThermalHelperPath),
         '-Mode', $Mode
@@ -699,8 +711,20 @@ function Set-SteamGameProfile {
         else { $existing | Add-Member -MemberType NoteProperty -Name UseLosslessScaling -Value ([bool]$UseLosslessScaling) }
     }
     if ($PSBoundParameters.ContainsKey('ProcessName')) {
-        if ($existing.PSObject.Properties['ProcessName']) { $existing.ProcessName = [string[]]@($ProcessName) }
-        else { $existing | Add-Member -MemberType NoteProperty -Name ProcessName -Value ([string[]]@($ProcessName)) }
+        $normalizedProcessNames = [string[]]@($ProcessName | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if (@($normalizedProcessNames).Count -gt 0) {
+            if ($existing.PSObject.Properties['ProcessName']) { $existing.ProcessName = $normalizedProcessNames }
+            else { $existing | Add-Member -MemberType NoteProperty -Name ProcessName -Value $normalizedProcessNames }
+        }
+        elseif ($existing.PSObject.Properties['ProcessName']) {
+            $existing.PSObject.Properties.Remove('ProcessName')
+        }
+    }
+
+    if (-not $existing.PSObject.Properties['ThermalProfile'] -and
+        -not $existing.PSObject.Properties['UseLosslessScaling'] -and
+        -not $existing.PSObject.Properties['ProcessName']) {
+        throw 'A saved game profile must contain ThermalProfile, UseLosslessScaling, or at least one ProcessName.'
     }
 
     if ($setting.GameOverrides.PSObject.Properties[$AppId]) {
@@ -827,13 +851,17 @@ function Start-SteamGameSession {
         $thermalModeChanged = $false
 
         try {
-            Write-Host "Thermal profile for this session: $resolvedThermalProfile"
+            $thermalProfileSource = if ($PSBoundParameters.ContainsKey('ThermalProfile')) { 'Explicit' } elseif ($override -and $override.PSObject.Properties['ThermalProfile']) { 'Game' } else { 'Global' }
+            $losslessScalingSource = if ($PSBoundParameters.ContainsKey('UseLosslessScaling')) { 'Explicit' } elseif ($override -and $override.PSObject.Properties['UseLosslessScaling']) { 'Game' } else { 'Global' }
+
+            Write-Output ("Thermal profile for this session: {0} ({1})" -f $resolvedThermalProfile, $thermalProfileSource)
+            Write-Output ("Lossless Scaling for this session: {0} ({1})" -f $(if ($useLs) { 'On' } else { 'Off' }), $losslessScalingSource)
             if ($resolvedThermalProfile -ne 'Balanced') {
                 Set-ElevatedLegionThermalMode -Mode $resolvedThermalProfile
                 $thermalModeChanged = $true
             }
             else {
-                Write-Host 'Balanced is the baseline; no thermal mode change is required.'
+                Write-Output 'Balanced is the baseline; no thermal mode change is required.'
             }
 
             if ($useLs) {
@@ -841,14 +869,14 @@ function Start-SteamGameSession {
                 if (-not $lsWasRunning) {
                     $lsPath = Get-LosslessScalingPath -Setting $setting
                     if (-not $lsPath) { throw 'Lossless Scaling could not be located.' }
-                    Write-Host "Starting Lossless Scaling: $lsPath"
+                    Write-Output "Starting Lossless Scaling: $lsPath"
                     $lsStartedProcess = Start-Process -FilePath $lsPath -ArgumentList '-StartMinimized' -PassThru
                 }
-                else { Write-Host 'Lossless Scaling is already running.' }
+                else { Write-Output 'Lossless Scaling is already running.' }
             }
-            else { Write-Host 'Lossless Scaling is disabled for this launch.' }
+            else { Write-Output 'Lossless Scaling is disabled for this launch.' }
 
-            Write-Host "Launching $($Game.Name) through Steam..."
+            Write-Output "Launching $($Game.Name) through Steam..."
             $preExistingProcessIds = @(
                 Get-GameProcess -Game $Game -ProcessName $resolvedProcessName |
                     ForEach-Object { $_.Id }
@@ -868,7 +896,7 @@ function Start-SteamGameSession {
                 Start-Sleep -Seconds ([int]$setting.PollIntervalSeconds)
             } while ($true)
 
-            Write-Host 'Game process detected. Waiting for the game to close...'
+            Write-Output 'Game process detected. Waiting for the game to close...'
             do {
                 Start-Sleep -Seconds ([int]$setting.PollIntervalSeconds)
                 $gameProcesses = @(
@@ -877,11 +905,11 @@ function Start-SteamGameSession {
                 )
             } while ($gameProcesses.Count -gt 0)
 
-            Write-Host "$($Game.Name) has closed."
+            Write-Output "$($Game.Name) has closed."
         }
         finally {
             if ($useLs -and $setting.CloseLosslessScalingAfterGame -and $lsStartedProcess -and -not $lsWasRunning) {
-                Write-Host 'Closing Lossless Scaling...'
+                Write-Output 'Closing Lossless Scaling...'
                 Get-Process -Id $lsStartedProcess.Id -ErrorAction SilentlyContinue | Stop-Process -ErrorAction SilentlyContinue
             }
             if ($thermalModeChanged) {
@@ -910,10 +938,16 @@ function Show-LegionGoRuntimeSteamCompanion {
     while ($true) {
         Clear-Host
         Write-Host '=== Legion Go Runtime Steam Companion ==='
-        Write-Host 'Type part of a game name to filter, A for all games, S for settings, or Q to quit.'
+        Write-Host 'Type part of a game name to filter, A for all games, R to refresh, S for settings, or Q to quit.'
         $choice = Read-Host 'Selection'
 
         if ($choice -match '^(?i)q$') { return }
+        if ($choice -match '^(?i)r$') {
+            $games = @(Get-SteamInstalledGame)
+            Write-Host ("Steam library refreshed. {0} installed game(s) found." -f $games.Count)
+            Start-Sleep -Seconds 1
+            continue
+        }
         if ($choice -match '^(?i)s$') {
             $returnToMain = $false
             while (-not $returnToMain) {
@@ -961,9 +995,10 @@ function Show-LegionGoRuntimeSteamCompanion {
                         foreach ($profile in $profiles) {
                             $game = Get-SteamInstalledGame -AppId $profile.AppId | Select-Object -First 1
                             $name = if ($game) { $game.Name } else { 'Unknown game' }
-                            $lsText = if ($profile.UseLosslessScaling) { 'On' } else { 'Off' }
+                            $thermalText = if ($profile.ThermalProfile) { $profile.ThermalProfile } else { '(inherits global default)' }
+                            $lsText = if ($null -eq $profile.UseLosslessScaling) { '(inherits global default)' } elseif ($profile.UseLosslessScaling) { 'On' } else { 'Off' }
                             Write-Host ('{0} (App ID {1})' -f $name,$profile.AppId)
-                            Write-Host ('  Thermal profile: {0}' -f $profile.ThermalProfile)
+                            Write-Host ('  Thermal profile: {0}' -f $thermalText)
                             Write-Host ('  Lossless Scaling: {0}' -f $lsText)
                             if (@($profile.ProcessName).Count -gt 0) {
                                 Write-Host ('  Process override: {0}' -f ($profile.ProcessName -join ', '))
@@ -998,7 +1033,7 @@ function Show-LegionGoRuntimeSteamCompanion {
         for ($index=0; $index -lt $matches.Count; $index++) {
             $resolved = Get-ResolvedSteamGameProfile -Game $matches[$index] -Setting $setting
             $lsText = if ($resolved.UseLosslessScaling) { 'On' } else { 'Off' }
-            $sourceText = if ($resolved.HasSavedProfile) { 'Saved profile' } else { 'Global defaults' }
+            $sourceText = if ($resolved.ThermalProfileSource -eq 'Game' -and $resolved.LosslessScalingSource -eq 'Game') { 'Saved profile' } elseif ($resolved.ThermalProfileSource -eq 'Global' -and $resolved.LosslessScalingSource -eq 'Global') { 'Global defaults' } else { 'Mixed sources' }
             Write-Host ('[{0}] {1} (App ID {2}) [Thermal: {3} | Lossless Scaling: {4} | {5}]' -f ($index+1),$matches[$index].Name,$matches[$index].AppId,$resolved.ThermalProfile,$lsText,$sourceText)
         }
         $number = Read-Host 'Enter game number or press Enter to search again'
