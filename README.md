@@ -1,4 +1,4 @@
-# Legion Go Runtime Steam Companion
+﻿# Legion Go Runtime Steam Companion
 
 **Legion Go Runtime Steam Companion** is a Windows PowerShell 5.1 companion module for **Legion Go Runtime**. It discovers locally installed Steam games, launches them in the normal user context, applies an optional per-game Legion thermal profile, optionally starts Lossless Scaling, waits for the game to close, and returns the Legion Go to Balanced mode afterward.
 
@@ -252,3 +252,21 @@ Get-Help Set-GameLauncherSetting -Full
 ## License
 
 Released under the MIT License. See `LICENSE`.
+
+
+## Dual-mode launcher wrapper
+
+`Start-LegionGoRuntimeSteamCompanion.ps1` uses the same wrapper pattern as the other launcher companions:
+
+```powershell
+# Interactive
+.\Start-LegionGoRuntimeSteamCompanion.ps1
+
+# Direct launch using saved/global profile resolution
+.\Start-LegionGoRuntimeSteamCompanion.ps1 -AppId 2191500
+
+# Direct launch by installed game name with a one-session thermal override
+.\Start-LegionGoRuntimeSteamCompanion.ps1 -Name 'Vampire Survivors' -ThermalProfile Performance
+```
+
+Steam remains responsible for game-specific launch arguments and behavior.

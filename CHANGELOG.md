@@ -1,4 +1,12 @@
-# Changelog
+﻿# Changelog
+
+## 1.2.7 - 2026-08-15
+
+- Updated `Start-LegionGoRuntimeSteamCompanion.ps1` to a dual-mode wrapper.
+- No arguments continue to open the interactive companion UI.
+- `-AppId` or `-Name` now starts a direct non-interactive Steam game session.
+- `-ThermalProfile` / `-TDProfile` can provide a one-session thermal override.
+- Direct launches still use Steam for all game launch behavior and arguments.
 
 All notable changes to Legion Go Runtime Steam Companion are documented here.
 

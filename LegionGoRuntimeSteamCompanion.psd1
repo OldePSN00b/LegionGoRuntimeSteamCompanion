@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule        = 'LegionGoRuntimeSteamCompanion.psm1'
-    ModuleVersion     = '1.2.6'
+    ModuleVersion     = '1.2.7'
     GUID              = '5a3fb632-7fd6-4d5b-9536-4e08930ebc80'
     Author            = '0ldePSN00b'
     CompanyName       = 'Independent'
