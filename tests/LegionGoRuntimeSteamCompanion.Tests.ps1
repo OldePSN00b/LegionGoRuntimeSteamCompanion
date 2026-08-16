@@ -19,6 +19,28 @@ Describe 'Module contract' {
 
         $unapproved.Count | Should Be 0
     }
+
+    It 'exports only the normalized Steam companion command families' {
+        $actual = @(Get-Command -Module LegionGoRuntimeSteamCompanion -CommandType Function | Select-Object -ExpandProperty Name | Sort-Object)
+        $expected = @(
+            'Get-SteamCompanionSetting',
+            'Get-SteamGameProfile',
+            'Get-SteamInstalledGame',
+            'Remove-SteamGameProfile',
+            'Set-SteamCompanionSetting',
+            'Set-SteamGameProfile',
+            'Start-SteamCompanion',
+            'Start-SteamGameSession'
+        ) | Sort-Object
+
+        @(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count | Should Be 0
+    }
+
+    It 'exposes the shared launcher session parameter sets' {
+        $command = Get-Command Start-SteamGameSession
+        @($command.ParameterSets.Name | Sort-Object) -join ',' | Should Be 'ByAppId,ByName,ByObject'
+        $command.Parameters['Game'].Attributes.ValueFromPipeline | Should Be $true
+    }
 }
 
 Describe 'Settings validation' {
@@ -92,13 +114,13 @@ Describe 'Saved game profiles' {
         }
 
         It 'rejects an empty process override as a new profile' {
-            Mock Get-GameLauncherSetting { Get-DefaultGameLauncherSetting }
+            Mock Get-SteamCompanionSetting { Get-DefaultGameLauncherSetting }
 
             { Set-SteamGameProfile -AppId '12345' -ProcessName @() } | Should Throw
         }
 
         It 'keeps a single process override as a collection' {
-            Mock Get-GameLauncherSetting {
+            Mock Get-SteamCompanionSetting {
                 $setting = Get-DefaultGameLauncherSetting
                 $setting.GameOverrides | Add-Member -MemberType NoteProperty -Name '12345' -Value ([pscustomobject]@{
                     ProcessName = @('ExampleGame')
@@ -124,7 +146,7 @@ Describe 'Game session process resolution' {
             $setting.GameOverrides | Add-Member NoteProperty '1' ([pscustomobject]@{ ProcessName = @('FirstGame') })
             $setting.GameOverrides | Add-Member NoteProperty '2' ([pscustomobject]@{ ProcessName = @('SecondGame') })
 
-            Mock Get-GameLauncherSetting { $setting }
+            Mock Get-SteamCompanionSetting { $setting }
             Mock Start-Process { }
             Mock Start-Sleep { }
             Mock Get-GameProcess {
@@ -138,7 +160,7 @@ Describe 'Game session process resolution' {
             @(
                 [pscustomobject]@{ Name = 'First'; AppId = '1'; InstallPath = 'C:\Games\First' },
                 [pscustomobject]@{ Name = 'Second'; AppId = '2'; InstallPath = 'C:\Games\Second' }
-            ) | Start-SteamGameSession
+            ) | Start-SteamGameSession -StabilitySeconds 0
 
             @($script:processNamesObserved[0..2] | Where-Object { $_ -ne 'FirstGame' }).Count | Should Be 0
             @($script:processNamesObserved[3..5] | Where-Object { $_ -ne 'SecondGame' }).Count | Should Be 0
@@ -186,7 +208,7 @@ Describe 'Interactive library actions' {
             Mock Start-Sleep { }
             Mock Get-SteamInstalledGame { [pscustomobject]@{ Name = 'Example'; AppId = '1'; InstallPath = 'C:\Games\Example' } }
 
-            Show-LegionGoRuntimeSteamCompanion
+            Start-SteamCompanion
 
             Assert-MockCalled Get-SteamInstalledGame -Times 2 -Exactly -Scope It
         }

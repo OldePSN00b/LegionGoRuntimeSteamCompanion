@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'LegionGoRuntimeSteamCompanion.psm1'
-    ModuleVersion     = '1.3.0'
+    ModuleVersion     = '2.0.0'
     GUID              = '5a3fb632-7fd6-4d5b-9536-4e08930ebc80'
     Author            = '0ldePSN00b'
     CompanyName       = 'Independent'
@@ -10,12 +10,12 @@
     FunctionsToExport = @(
         'Get-SteamInstalledGame',
         'Get-SteamGameProfile',
-        'Get-GameLauncherSetting',
-        'Set-GameLauncherSetting',
+        'Get-SteamCompanionSetting',
+        'Set-SteamCompanionSetting',
         'Set-SteamGameProfile',
         'Remove-SteamGameProfile',
         'Start-SteamGameSession',
-        'Show-LegionGoRuntimeSteamCompanion'
+        'Start-SteamCompanion'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
@@ -24,7 +24,7 @@
         PSData = @{
             Tags         = @('Steam', 'LegionGo', 'LegionGoRuntime', 'SteamCompanion', 'LosslessScaling', 'Gaming')
             ProjectUri   = ''
-            ReleaseNotes = 'Adds launcher refresh, direct-session source reporting, inherited-profile display, standardized informational output, and self-contained LegionGoRuntime thermal integration.'
+            ReleaseNotes = 'Introduces the normalized 2.0 command surface shared by launcher companions: Steam-prefixed settings commands, Start-SteamCompanion, and a unified game-session interface.'
         }
     }
 }

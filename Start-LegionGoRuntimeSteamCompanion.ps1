@@ -48,7 +48,7 @@ $modulePath = Join-Path -Path $PSScriptRoot -ChildPath 'LegionGoRuntimeSteamComp
 Import-Module -Name $modulePath -Force
 
 if ($PSCmdlet.ParameterSetName -eq 'Interactive') {
-    Show-LegionGoRuntimeSteamCompanion
+    Start-SteamCompanion
     return
 }
 

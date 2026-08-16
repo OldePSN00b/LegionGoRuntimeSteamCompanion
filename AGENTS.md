@@ -17,6 +17,13 @@ These instructions apply to the entire repository.
 ## Compatibility and documentation
 
 - Preserve public command names, parameters, accepted inputs, output shapes, and behavior unless an API change is explicitly approved.
+- Keep the shared public command families parallel with other launcher companions:
+  `Get-<Launcher>CompanionSetting`, `Set-<Launcher>CompanionSetting`,
+  installed-game discovery, game-profile CRUD, `Start-<Launcher>GameSession`,
+  and `Start-<Launcher>Companion`. Launcher-specific diagnostic commands may be
+  added only when the underlying launcher requires them.
+- Keep `Start-SteamGameSession` selection and one-session override parameters
+  aligned with the corresponding session command in each companion.
 - Update `README.md` and `CHANGELOG.md` for every user-visible change.
 - Follow semantic versioning for releases and version changes.
 - Prepare release notes before creating a release tag.

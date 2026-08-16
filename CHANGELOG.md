@@ -1,5 +1,16 @@
 ﻿# Changelog
 
+## 2.0.0 - 2026-08-16
+
+- Normalized the public API with the Epic companion: `Start-SteamCompanion`,
+  `Get-SteamCompanionSetting`, and `Set-SteamCompanionSetting` are now the sole
+  interactive and settings entry points.
+- Removed the legacy `Show-LegionGoRuntimeSteamCompanion`,
+  `Get-GameLauncherSetting`, and `Set-GameLauncherSetting` commands.
+- Added `Name` and pipeline `Game` selection plus launch timeout, polling, and
+  process-stability overrides to `Start-SteamGameSession` for session parity.
+- Updated the dual-mode launcher wrapper and Windows PowerShell 5.1 coverage.
+
 ## 1.3.0 - 2026-08-15
 
 - Added an explicit interactive library refresh action.

@@ -87,7 +87,7 @@ Without a matching profile, Lossless Scaling may start but will not apply the in
 
 ```powershell
 Import-Module .\LegionGoRuntimeSteamCompanion.psd1 -Force
-Show-LegionGoRuntimeSteamCompanion
+Start-SteamCompanion
 ```
 
 List installed games:
@@ -137,19 +137,19 @@ The global thermal default is Balanced.
 View settings:
 
 ```powershell
-Get-GameLauncherSetting
+Get-SteamCompanionSetting
 ```
 
 Set the global thermal default:
 
 ```powershell
-Set-GameLauncherSetting -DefaultThermalProfile Balanced
+Set-SteamCompanionSetting -DefaultThermalProfile Balanced
 ```
 
 Set the global Lossless Scaling preference:
 
 ```powershell
-Set-GameLauncherSetting -UseLosslessScaling $true
+Set-SteamCompanionSetting -UseLosslessScaling $true
 ```
 
 Settings are stored at:
@@ -246,10 +246,11 @@ Every module function uses a verb returned by `Get-Verb`. Unapproved-verb warnin
 
 ```powershell
 Get-Help Start-SteamGameSession -Full
+Get-Help Start-SteamCompanion -Full
 Get-Help Set-SteamGameProfile -Full
 Get-Help Get-SteamGameProfile -Full
 Get-Help Remove-SteamGameProfile -Full
-Get-Help Set-GameLauncherSetting -Full
+Get-Help Set-SteamCompanionSetting -Full
 ```
 
 ## License

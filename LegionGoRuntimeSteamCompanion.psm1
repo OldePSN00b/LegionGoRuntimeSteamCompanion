@@ -161,7 +161,7 @@ function ConvertTo-NormalizedGameLauncherSetting {
     return $Setting
 }
 
-function Get-GameLauncherSetting {
+function Get-SteamCompanionSetting {
     <#
     .SYNOPSIS
         Gets the current Legion Go Runtime Steam Companion settings.
@@ -176,7 +176,7 @@ function Get-GameLauncherSetting {
         PSCustomObject containing the current launcher settings.
 
     .EXAMPLE
-        Get-GameLauncherSetting
+        Get-SteamCompanionSetting
     #>
     [CmdletBinding()]
     param()
@@ -216,7 +216,7 @@ function Get-GameLauncherSetting {
     }
 }
 
-function Set-GameLauncherSetting {
+function Set-SteamCompanionSetting {
     <#
     .SYNOPSIS
         Changes one or more Legion Go Runtime Steam Companion settings.
@@ -246,10 +246,10 @@ function Set-GameLauncherSetting {
         Number of seconds between process detection checks.
 
     .EXAMPLE
-        Set-GameLauncherSetting -UseLosslessScaling $false
+        Set-SteamCompanionSetting -UseLosslessScaling $false
 
     .EXAMPLE
-        Set-GameLauncherSetting -GameStartTimeoutSeconds 600 -PollIntervalSeconds 3
+        Set-SteamCompanionSetting -GameStartTimeoutSeconds 600 -PollIntervalSeconds 3
     #>
     [CmdletBinding()]
     param(
@@ -264,7 +264,7 @@ function Set-GameLauncherSetting {
         [int]$PollIntervalSeconds
     )
 
-    $setting = Get-GameLauncherSetting
+    $setting = Get-SteamCompanionSetting
 
     foreach ($name in @(
         'DefaultThermalProfile',
@@ -631,7 +631,7 @@ function Get-SteamGameProfile {
     [CmdletBinding()]
     param([string]$AppId)
 
-    $setting = Get-GameLauncherSetting
+    $setting = Get-SteamCompanionSetting
     $profiles = @()
     if ($setting.GameOverrides) {
         foreach ($property in $setting.GameOverrides.PSObject.Properties) {
@@ -694,7 +694,7 @@ function Set-SteamGameProfile {
         throw 'Specify at least one profile value: ThermalProfile, UseLosslessScaling, or ProcessName.'
     }
 
-    $setting = Get-GameLauncherSetting
+    $setting = Get-SteamCompanionSetting
     if (-not $setting.GameOverrides) {
         $setting.GameOverrides = [pscustomobject]@{}
     }
@@ -752,7 +752,7 @@ function Remove-SteamGameProfile {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][string]$AppId)
 
-    $setting = Get-GameLauncherSetting
+    $setting = Get-SteamCompanionSetting
     if (-not $setting.GameOverrides -or -not $setting.GameOverrides.PSObject.Properties[$AppId]) {
         return
     }
@@ -780,6 +780,9 @@ function Start-SteamGameSession {
     .PARAMETER AppId
         Steam App ID of an installed game.
 
+    .PARAMETER Name
+        Display name of an installed game. The selection must resolve to exactly one title.
+
     .PARAMETER ThermalProfile
         Thermal profile override for this launch: Quiet, Balanced, or Performance.
         TDProfile is provided as a shorter alias for scripts and shortcuts.
@@ -799,21 +802,39 @@ function Start-SteamGameSession {
     [CmdletBinding(DefaultParameterSetName = 'ByObject')]
     param(
         [Parameter(Mandatory, ParameterSetName = 'ByObject', ValueFromPipeline)][psobject]$Game,
-        [Parameter(Mandatory, ParameterSetName = 'ById')][string]$AppId,
+        [Parameter(Mandatory, ParameterSetName = 'ByAppId')][string]$AppId,
+        [Parameter(Mandatory, ParameterSetName = 'ByName')][string]$Name,
         [Alias('TDProfile')]
         [ValidateSet('Quiet', 'Balanced', 'Performance')]
         [string]$ThermalProfile,
         [string[]]$ProcessName,
-        [Nullable[bool]]$UseLosslessScaling
+        [Nullable[bool]]$UseLosslessScaling,
+        [ValidateRange(5, 3600)]
+        [int]$LaunchTimeoutSeconds,
+        [ValidateRange(100, 5000)]
+        [int]$PollIntervalMilliseconds,
+        [ValidateRange(0, 10)]
+        [int]$StabilitySeconds = 2
     )
 
     process {
-        if ($PSCmdlet.ParameterSetName -eq 'ById') {
-            $Game = Get-SteamInstalledGame -AppId $AppId | Select-Object -First 1
-            if (-not $Game) { throw "Steam App ID $AppId is not installed." }
+        if ($PSCmdlet.ParameterSetName -ne 'ByObject') {
+            $games = @(
+                if ($PSCmdlet.ParameterSetName -eq 'ByAppId') {
+                    Get-SteamInstalledGame -AppId $AppId
+                }
+                else {
+                    Get-SteamInstalledGame -Name $Name
+                }
+            )
+            if ($games.Count -eq 0) { throw 'No installed Steam game matched the requested selection.' }
+            if ($games.Count -gt 1) { throw 'The Steam game selection matched more than one installed title. Use AppId or a more specific Name.' }
+            $Game = $games[0]
         }
 
-        $setting = Get-GameLauncherSetting
+        $setting = Get-SteamCompanionSetting
+        $effectiveLaunchTimeoutSeconds = if ($PSBoundParameters.ContainsKey('LaunchTimeoutSeconds')) { $LaunchTimeoutSeconds } else { [int]$setting.GameStartTimeoutSeconds }
+        $effectivePollIntervalMilliseconds = if ($PSBoundParameters.ContainsKey('PollIntervalMilliseconds')) { $PollIntervalMilliseconds } else { [int]([double]$setting.PollIntervalSeconds * 1000) }
         $override = Get-GameOverride -Setting $setting -AppId $Game.AppId
 
         $resolvedProcessName = if ($PSBoundParameters.ContainsKey('ProcessName')) {
@@ -889,16 +910,25 @@ function Start-SteamGameSession {
                     Get-GameProcess -Game $Game -ProcessName $resolvedProcessName |
                         Where-Object { $_.Id -notin $preExistingProcessIds }
                 )
-                if ($gameProcesses.Count -gt 0) { break }
-                if ($stopwatch.Elapsed.TotalSeconds -ge [int]$setting.GameStartTimeoutSeconds) {
-                    throw "No game process was detected for '$($Game.Name)' within $($setting.GameStartTimeoutSeconds) seconds. Add a ProcessName override for App ID $($Game.AppId)."
+                if ($gameProcesses.Count -gt 0) {
+                    if ($StabilitySeconds -gt 0) {
+                        Start-Sleep -Seconds $StabilitySeconds
+                        $gameProcesses = @(
+                            Get-GameProcess -Game $Game -ProcessName $resolvedProcessName |
+                                Where-Object { $_.Id -notin $preExistingProcessIds }
+                        )
+                    }
+                    if ($gameProcesses.Count -gt 0) { break }
                 }
-                Start-Sleep -Seconds ([int]$setting.PollIntervalSeconds)
+                if ($stopwatch.Elapsed.TotalSeconds -ge $effectiveLaunchTimeoutSeconds) {
+                    throw "No game process was detected for '$($Game.Name)' within $effectiveLaunchTimeoutSeconds seconds. Add a ProcessName override for App ID $($Game.AppId)."
+                }
+                Start-Sleep -Milliseconds $effectivePollIntervalMilliseconds
             } while ($true)
 
             Write-Output 'Game process detected. Waiting for the game to close...'
             do {
-                Start-Sleep -Seconds ([int]$setting.PollIntervalSeconds)
+                Start-Sleep -Milliseconds $effectivePollIntervalMilliseconds
                 $gameProcesses = @(
                     Get-GameProcess -Game $Game -ProcessName $resolvedProcessName |
                         Where-Object { $_.Id -notin $preExistingProcessIds }
@@ -920,7 +950,7 @@ function Start-SteamGameSession {
     }
 }
 
-function Show-LegionGoRuntimeSteamCompanion {
+function Start-SteamCompanion {
     <#
     .SYNOPSIS
         Opens the interactive Steam Companion menu.
@@ -951,7 +981,7 @@ function Show-LegionGoRuntimeSteamCompanion {
         if ($choice -match '^(?i)s$') {
             $returnToMain = $false
             while (-not $returnToMain) {
-                $setting = Get-GameLauncherSetting
+                $setting = Get-SteamCompanionSetting
                 Clear-Host
                 Write-Host '=== Steam Companion Settings ==='
                 Write-Host "[1] Default thermal profile: $($setting.DefaultThermalProfile)"
@@ -967,9 +997,9 @@ function Show-LegionGoRuntimeSteamCompanion {
                         Write-Host '[1] Quiet  [2] Balanced  [3] Performance'
                         $profileChoice = Read-Host 'Default thermal profile'
                         $profile = switch ($profileChoice) { '1' { 'Quiet' } '2' { 'Balanced' } '3' { 'Performance' } default { $null } }
-                        if ($profile) { Set-GameLauncherSetting -DefaultThermalProfile $profile | Out-Null }
+                        if ($profile) { Set-SteamCompanionSetting -DefaultThermalProfile $profile | Out-Null }
                     }
-                    '2' { Set-GameLauncherSetting -UseLosslessScaling (-not [bool]$setting.UseLosslessScaling) | Out-Null }
+                    '2' { Set-SteamCompanionSetting -UseLosslessScaling (-not [bool]$setting.UseLosslessScaling) | Out-Null }
                     '3' {
                         $filter = Read-Host 'Enter part of the game name'
                         $profileGames = @(Get-SteamInstalledGame -Name $filter)
@@ -1029,7 +1059,7 @@ function Show-LegionGoRuntimeSteamCompanion {
 
         $matches = @(if ($choice -match '^(?i)a$' -or [string]::IsNullOrWhiteSpace($choice)) { $games } else { $games | Where-Object Name -Like "*$choice*" })
         if ($matches.Count -eq 0) { Write-Host 'No matching games found.'; Read-Host 'Press Enter to continue' | Out-Null; continue }
-        $setting = Get-GameLauncherSetting
+        $setting = Get-SteamCompanionSetting
         for ($index=0; $index -lt $matches.Count; $index++) {
             $resolved = Get-ResolvedSteamGameProfile -Game $matches[$index] -Setting $setting
             $lsText = if ($resolved.UseLosslessScaling) { 'On' } else { 'Off' }
@@ -1041,7 +1071,7 @@ function Show-LegionGoRuntimeSteamCompanion {
         $selectedNumber = 0
         if (-not [int]::TryParse($number,[ref]$selectedNumber) -or $selectedNumber -lt 1 -or $selectedNumber -gt $matches.Count) { Write-Host 'Invalid selection.'; Start-Sleep 1; continue }
         $selectedGame = $matches[$selectedNumber-1]
-        $selectedProfile = Get-ResolvedSteamGameProfile -Game $selectedGame -Setting (Get-GameLauncherSetting)
+        $selectedProfile = Get-ResolvedSteamGameProfile -Game $selectedGame -Setting (Get-SteamCompanionSetting)
         $selectedLsText = if ($selectedProfile.UseLosslessScaling) { 'On' } else { 'Off' }
         Write-Host ''
         Write-Host ('Selected profile for {0}:' -f $selectedGame.Name)
@@ -1057,10 +1087,10 @@ function Show-LegionGoRuntimeSteamCompanion {
 Export-ModuleMember -Function @(
     'Get-SteamInstalledGame',
     'Get-SteamGameProfile',
-    'Get-GameLauncherSetting',
-    'Set-GameLauncherSetting',
+    'Get-SteamCompanionSetting',
+    'Set-SteamCompanionSetting',
     'Set-SteamGameProfile',
     'Remove-SteamGameProfile',
     'Start-SteamGameSession',
-    'Show-LegionGoRuntimeSteamCompanion'
+    'Start-SteamCompanion'
 )
