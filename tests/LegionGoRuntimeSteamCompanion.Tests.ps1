@@ -26,6 +26,7 @@ Describe 'Module contract' {
             'Get-SteamCompanionSetting',
             'Get-SteamGameProfile',
             'Get-SteamInstalledGame',
+            'Get-SteamLosslessScalingFilter',
             'Remove-SteamGameProfile',
             'Set-SteamCompanionSetting',
             'Set-SteamGameProfile',
@@ -40,6 +41,52 @@ Describe 'Module contract' {
         $command = Get-Command Start-SteamGameSession
         @($command.ParameterSets.Name | Sort-Object) -join ',' | Should Be 'ByAppId,ByName,ByObject'
         $command.Parameters['Game'].Attributes.ValueFromPipeline | Should Be $true
+    }
+}
+
+Describe 'Lossless Scaling executable lookup' {
+    InModuleScope LegionGoRuntimeSteamCompanion {
+        It 'prefers a saved process override and supports PrimaryOnly' {
+            $game = [pscustomobject]@{ Name = 'Example Game'; AppId = '12345'; InstallPath = 'C:\Games\Example' }
+            Mock Get-SteamGameProfile {
+                [pscustomobject]@{ AppId = '12345'; ProcessName = @('RealGame.exe', 'Alternate.exe') }
+            }
+
+            $result = @(Get-SteamLosslessScalingFilter -Game $game -PrimaryOnly)
+
+            $result.Count | Should Be 1
+            $result[0].ExecutableName | Should Be 'RealGame.exe'
+            $result[0].Source | Should Be 'GameProfileOverride'
+        }
+
+        It 'ranks a likely game executable ahead of launchers in the install directory' {
+            $installPath = Join-Path -Path $TestDrive -ChildPath 'Example Game'
+            $binaryPath = Join-Path -Path $installPath -ChildPath 'Binaries\Win64'
+            New-Item -ItemType Directory -Path $binaryPath -Force | Out-Null
+            New-Item -ItemType File -Path (Join-Path -Path $installPath -ChildPath 'Launcher.exe') -Force | Out-Null
+            New-Item -ItemType File -Path (Join-Path -Path $binaryPath -ChildPath 'ExampleGame.exe') -Force | Out-Null
+            New-Item -ItemType File -Path (Join-Path -Path $binaryPath -ChildPath 'UnityCrashHandler64.exe') -Force | Out-Null
+            Mock Get-SteamGameProfile { }
+
+            $game = [pscustomobject]@{ Name = 'Example Game'; AppId = '12345'; InstallPath = $installPath }
+            $result = @(Get-SteamLosslessScalingFilter -Game $game)
+
+            $result.Count | Should Be 1
+            $result[0].ExecutableName | Should Be 'ExampleGame.exe'
+            $result[0].IsPrimary | Should Be $true
+            $result[0].Source | Should Be 'SteamInstallDirectory'
+        }
+
+        It 'rejects an ambiguous name selection' {
+            Mock Get-SteamInstalledGame {
+                @(
+                    [pscustomobject]@{ Name = 'Example One'; AppId = '1'; InstallPath = 'C:\Games\One' },
+                    [pscustomobject]@{ Name = 'Example Two'; AppId = '2'; InstallPath = 'C:\Games\Two' }
+                )
+            }
+
+            { Get-SteamLosslessScalingFilter -Name 'Example' } | Should Throw
+        }
     }
 }
 
@@ -211,6 +258,27 @@ Describe 'Interactive library actions' {
             Start-SteamCompanion
 
             Assert-MockCalled Get-SteamInstalledGame -Times 2 -Exactly -Scope It
+        }
+
+        It 'looks up a Lossless Scaling executable when L is selected' {
+            $script:answers = @('l', 'Example', '1', '', 'q')
+            Mock Read-Host {
+                $answer = $script:answers[0]
+                $script:answers = @($script:answers | Select-Object -Skip 1)
+                $answer
+            }
+            Mock Clear-Host { }
+            Mock Write-Host { }
+            Mock Get-SteamInstalledGame { [pscustomobject]@{ Name = 'Example'; AppId = '1'; InstallPath = 'C:\Games\Example' } }
+            Mock Get-SteamLosslessScalingFilter {
+                [pscustomobject]@{ GameName = 'Example'; AppId = '1'; ExecutableName = 'Example.exe'; IsPrimary = $true; Source = 'SteamInstallDirectory' }
+            }
+
+            Start-SteamCompanion
+
+            Assert-MockCalled Get-SteamLosslessScalingFilter -Times 1 -Exactly -Scope It -ParameterFilter {
+                $Game.AppId -eq '1'
+            }
         }
     }
 }

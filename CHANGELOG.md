@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## 2.1.0 - 2026-09-30
+
+- Added `Get-SteamLosslessScalingFilter` to return filename-only executable
+  filters from saved process overrides or ranked install-directory candidates.
+- Added `L` to the interactive main menu for the same executable lookup.
+- Documented Steam's manifest limitation and that Lossless Scaling profiles
+  should use the executable filename rather than its full path.
+
 ## 2.0.0 - 2026-08-16
 
 - Normalized the public API with the Epic companion: `Start-SteamCompanion`,

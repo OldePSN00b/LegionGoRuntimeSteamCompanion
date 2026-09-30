@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'LegionGoRuntimeSteamCompanion.psm1'
-    ModuleVersion     = '2.0.0'
+    ModuleVersion     = '2.1.0'
     GUID              = '5a3fb632-7fd6-4d5b-9536-4e08930ebc80'
     Author            = '0ldePSN00b'
     CompanyName       = 'Independent'
@@ -9,6 +9,7 @@
     PowerShellVersion = '5.1'
     FunctionsToExport = @(
         'Get-SteamInstalledGame',
+        'Get-SteamLosslessScalingFilter',
         'Get-SteamGameProfile',
         'Get-SteamCompanionSetting',
         'Set-SteamCompanionSetting',
@@ -24,7 +25,7 @@
         PSData = @{
             Tags         = @('Steam', 'LegionGo', 'LegionGoRuntime', 'SteamCompanion', 'LosslessScaling', 'Gaming')
             ProjectUri   = ''
-            ReleaseNotes = 'Introduces the normalized 2.0 command surface shared by launcher companions: Steam-prefixed settings commands, Start-SteamCompanion, and a unified game-session interface.'
+            ReleaseNotes = 'Adds filename-only Lossless Scaling executable lookup through Get-SteamLosslessScalingFilter and the interactive L menu action.'
         }
     }
 }

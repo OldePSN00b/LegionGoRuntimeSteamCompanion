@@ -73,6 +73,20 @@ Before using Lossless Scaling integration:
 
 Without a matching profile, Lossless Scaling may start but will not apply the intended game-specific configuration.
 
+To find the filename for a Lossless Scaling application/filter profile, use:
+
+```powershell
+Get-SteamLosslessScalingFilter -Name 'Vampire Survivors'
+Get-SteamLosslessScalingFilter -AppId 1794680 -PrimaryOnly
+```
+
+Enter the returned executable filename only, not its full path. The helper
+prefers a saved `ProcessName` override. Steam app manifests contain the install
+folder but not the launch executable, so otherwise it scans that folder and
+ranks likely game executables ahead of launchers, crash handlers, and installers.
+If several candidates are returned, verify the primary suggestion. The same
+lookup is available as `L` on the interactive main menu.
+
 ## Installation
 
 1. Download and extract the release ZIP.
@@ -202,6 +216,7 @@ Remove-SteamGameProfile -AppId 2191500
 Per-game profiles can also be configured, viewed, or removed from the interactive Settings menu. The game picker displays the effective thermal profile and Lossless Scaling state for each game, including whether the values come from a saved profile or the global defaults.
 
 Use `R` from the main interactive menu to rescan installed Steam libraries.
+Use `L` to look up a filename-only Lossless Scaling executable filter.
 
 ## Process overrides
 
@@ -234,6 +249,8 @@ Administrator privileges are requested only for thermal-mode changes. The compan
 
 - UAC prompts can interrupt Quiet and Performance workflows.
 - Lossless Scaling profiles must be configured manually in its GUI.
+- Steam manifests do not register a launch executable, so executable lookup may
+  return several candidates that require confirmation.
 - Lossless Scaling must have **Run as administrator** enabled for reliable integration.
 - Some games require process-name overrides.
 - The companion assumes Balanced is the post-session baseline; it does not query and restore an arbitrary pre-launch thermal mode.

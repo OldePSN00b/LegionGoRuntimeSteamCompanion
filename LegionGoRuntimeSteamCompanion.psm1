@@ -433,6 +433,146 @@ function Get-SteamInstalledGame {
     $games | Sort-Object Name, AppId
 }
 
+function Get-SteamLosslessScalingFilter {
+    <#
+    .SYNOPSIS
+        Gets executable filenames suitable for Lossless Scaling Steam profiles.
+
+    .DESCRIPTION
+        Resolves exactly one installed Steam game and returns filename-only
+        executable filters. A saved process override takes precedence. Because
+        Steam appmanifest files identify the installation directory but not the
+        launch executable, the fallback scans that directory and ranks likely
+        game executables ahead of launchers, crash handlers, and installers.
+
+    .PARAMETER Name
+        Selects one installed Steam game by display name. Wildcards are supported;
+        the result must resolve to exactly one title.
+
+    .PARAMETER AppId
+        Selects one installed Steam game by Steam App ID.
+
+    .PARAMETER Game
+        An installed-game object returned by Get-SteamInstalledGame.
+
+    .PARAMETER PrimaryOnly
+        Returns only the highest-ranked executable.
+
+    .EXAMPLE
+        Get-SteamLosslessScalingFilter -Name 'Vampire Survivors'
+
+    .EXAMPLE
+        Get-SteamLosslessScalingFilter -AppId 1794680 -PrimaryOnly
+    #>
+    [CmdletBinding(DefaultParameterSetName = 'ByName')]
+    param(
+        [Parameter(Mandatory, ParameterSetName = 'ByName')]
+        [string]$Name,
+
+        [Parameter(Mandatory, ParameterSetName = 'ByAppId')]
+        [string]$AppId,
+
+        [Parameter(Mandatory, ParameterSetName = 'ByObject', ValueFromPipeline)]
+        [psobject]$Game,
+
+        [switch]$PrimaryOnly
+    )
+
+    process {
+        [object[]]$games = @(
+            if ($PSCmdlet.ParameterSetName -eq 'ByObject') {
+                $Game
+            }
+            elseif ($PSCmdlet.ParameterSetName -eq 'ByAppId') {
+                Get-SteamInstalledGame -AppId $AppId
+            }
+            else {
+                Get-SteamInstalledGame -Name $Name
+            }
+        )
+
+        if (@($games).Count -eq 0) {
+            throw 'No installed Steam game matched the requested selection.'
+        }
+        if (@($games).Count -gt 1) {
+            $matchedNames = ($games | ForEach-Object { $_.Name }) -join ', '
+            throw ("The selection matched more than one Steam game: {0}. Use -AppId or a more specific -Name." -f $matchedNames)
+        }
+
+        $resolvedGame = $games[0]
+        $source = 'GameProfileOverride'
+        [string[]]$executableNames = @()
+        $savedProfile = Get-SteamGameProfile -AppId ([string]$resolvedGame.AppId) | Select-Object -First 1
+        if ($savedProfile -and @($savedProfile.ProcessName).Count -gt 0) {
+            $executableNames = [string[]]@(
+                $savedProfile.ProcessName |
+                    ForEach-Object { [System.IO.Path]::GetFileName([string]$_) } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                    Select-Object -Unique
+            )
+        }
+        else {
+            $source = 'SteamInstallDirectory'
+            if (-not (Test-Path -LiteralPath $resolvedGame.InstallPath -PathType Container)) {
+                throw ("Steam game '{0}' does not have an accessible installation directory." -f $resolvedGame.Name)
+            }
+
+            $normalizedGameName = ([string]$resolvedGame.Name -replace '[^A-Za-z0-9]', '').ToLowerInvariant()
+            $normalizedInstallName = ([System.IO.Path]::GetFileName([string]$resolvedGame.InstallPath) -replace '[^A-Za-z0-9]', '').ToLowerInvariant()
+            [object[]]$candidates = @(
+                Get-ChildItem -LiteralPath $resolvedGame.InstallPath -Filter '*.exe' -File -Recurse -ErrorAction SilentlyContinue |
+                    ForEach-Object {
+                        $baseName = $_.BaseName
+                        $normalizedBaseName = ($baseName -replace '[^A-Za-z0-9]', '').ToLowerInvariant()
+                        $relativeDirectory = $_.DirectoryName.Substring(([string]$resolvedGame.InstallPath).TrimEnd('\').Length).TrimStart('\')
+                        $depth = if ([string]::IsNullOrWhiteSpace($relativeDirectory)) { 0 } else { @($relativeDirectory -split '\\').Count }
+                        $isHelper = $baseName -match '(?i)(crash|report|unins|uninstall|setup|install|redist|vcredist|dxsetup|easyanticheat|eosbootstrapper|unitycrashhandler|launcher|updater|update)'
+                        $nameMatch = (-not [string]::IsNullOrWhiteSpace($normalizedBaseName)) -and
+                            (($normalizedGameName.Contains($normalizedBaseName)) -or
+                             ($normalizedBaseName.Contains($normalizedGameName)) -or
+                             ($normalizedInstallName.Contains($normalizedBaseName)) -or
+                             ($normalizedBaseName.Contains($normalizedInstallName)))
+
+                        [pscustomobject]@{
+                            ExecutableName = $_.Name
+                            IsHelper       = $isHelper
+                            NameRank       = if ($nameMatch) { 0 } else { 1 }
+                            Depth          = $depth
+                            Path           = $_.FullName
+                        }
+                    }
+            )
+
+            [object[]]$likelyCandidates = @($candidates | Where-Object { -not $_.IsHelper })
+            if (@($likelyCandidates).Count -eq 0) {
+                $likelyCandidates = @($candidates)
+            }
+            $executableNames = [string[]]@(
+                $likelyCandidates |
+                    Sort-Object NameRank, Depth, ExecutableName, Path |
+                    Select-Object -ExpandProperty ExecutableName -Unique
+            )
+        }
+
+        if ($executableNames.Count -eq 0) {
+            throw ("Steam game '{0}' does not have an executable suitable for Lossless Scaling." -f $resolvedGame.Name)
+        }
+        if ($PrimaryOnly) {
+            $executableNames = [string[]]@($executableNames | Select-Object -First 1)
+        }
+
+        for ($index = 0; $index -lt $executableNames.Count; $index++) {
+            [pscustomobject]@{
+                GameName       = [string]$resolvedGame.Name
+                AppId          = [string]$resolvedGame.AppId
+                ExecutableName = [string]$executableNames[$index]
+                IsPrimary      = ($index -eq 0)
+                Source         = $source
+            }
+        }
+    }
+}
+
 function Get-LosslessScalingPath {
     <#
     .SYNOPSIS
@@ -968,10 +1108,48 @@ function Start-SteamCompanion {
     while ($true) {
         Clear-Host
         Write-Host '=== Legion Go Runtime Steam Companion ==='
-        Write-Host 'Type part of a game name to filter, A for all games, R to refresh, S for settings, or Q to quit.'
+        Write-Host 'Type part of a game name to filter, A for all games, L for a Lossless Scaling executable, R to refresh, S for settings, or Q to quit.'
         $choice = Read-Host 'Selection'
 
         if ($choice -match '^(?i)q$') { return }
+        if ($choice -match '^(?i)l$') {
+            Clear-Host
+            Write-Host '=== Lossless Scaling Executable Lookup ==='
+            $filter = Read-Host 'Enter part of the game name'
+            [object[]]$filterGames = @($games | Where-Object Name -Like "*$filter*")
+            if (@($filterGames).Count -eq 0) {
+                Read-Host 'No matching games. Press Enter to return' | Out-Null
+                continue
+            }
+
+            for ($index = 0; $index -lt @($filterGames).Count; $index++) {
+                Write-Host ('[{0}] {1} (App ID {2})' -f ($index + 1), $filterGames[$index].Name, $filterGames[$index].AppId)
+            }
+
+            $selectedNumber = 0
+            $value = Read-Host 'Game number'
+            if (-not [int]::TryParse($value, [ref]$selectedNumber) -or
+                $selectedNumber -lt 1 -or $selectedNumber -gt @($filterGames).Count) {
+                Write-Host 'Invalid selection.'
+                Start-Sleep -Seconds 1
+                continue
+            }
+
+            $selectedGame = $filterGames[$selectedNumber - 1]
+            [object[]]$losslessScalingFilters = @(Get-SteamLosslessScalingFilter -Game $selectedGame)
+
+            Write-Host ''
+            Write-Host ('Lossless Scaling executable filter for {0}:' -f $selectedGame.Name)
+            foreach ($losslessScalingFilter in $losslessScalingFilters) {
+                $primaryLabel = if ($losslessScalingFilter.IsPrimary) { ' [Primary]' } else { '' }
+                Write-Host ('  {0}{1}' -f $losslessScalingFilter.ExecutableName, $primaryLabel)
+            }
+            Write-Host ''
+            Write-Host 'Type the filename only into the Lossless Scaling application/filter field.'
+            Write-Host 'Steam manifests identify the game folder, so verify the primary suggestion if several executables are listed.'
+            Read-Host 'Press Enter to return' | Out-Null
+            continue
+        }
         if ($choice -match '^(?i)r$') {
             $games = @(Get-SteamInstalledGame)
             Write-Host ("Steam library refreshed. {0} installed game(s) found." -f $games.Count)
@@ -1086,6 +1264,7 @@ function Start-SteamCompanion {
 # Export only the supported public surface. All other functions remain private.
 Export-ModuleMember -Function @(
     'Get-SteamInstalledGame',
+    'Get-SteamLosslessScalingFilter',
     'Get-SteamGameProfile',
     'Get-SteamCompanionSetting',
     'Set-SteamCompanionSetting',
